@@ -1,11 +1,5 @@
-import Script from 'next/script';
-import SHELL from './shell';
+import Overview from '@/components/Overview';
 
-export default function Home() {
-  return (
-    <>
-      <div dangerouslySetInnerHTML={{ __html: SHELL }} />
-      <Script src="/lab.js" strategy="afterInteractive" />
-    </>
-  );
+export default function Page() {
+  return <Overview />;
 }

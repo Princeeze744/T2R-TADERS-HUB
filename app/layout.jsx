@@ -1,22 +1,36 @@
+import '@fontsource/instrument-serif/400.css';
+import '@fontsource/instrument-serif/400-italic.css';
+import { GeistSans } from 'geist/font/sans';
+import { GeistMono } from 'geist/font/mono';
 import './globals.css';
+import DataProvider from '@/components/DataProvider';
+import Nav from '@/components/Nav';
+import CommandPalette from '@/components/CommandPalette';
 
 export const metadata = {
-  title: 'T2R Lab Results',
-  description: 'Trade2Retire Academy research: nine zone strategies tested on 150 markets, every trade counted.',
+  title: 'T2R Lab · Trade2Retire Academy',
+  description: 'Nine zone strategies tested on 150 markets, every trade counted, then followed live. Trade2Retire Academy research.',
 };
+export const viewport = { themeColor: '#06080c', width: 'device-width', initialScale: 1 };
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650&family=Manrope:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
-        />
-      </head>
-      <body>{children}</body>
+    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
+      <body>
+        <DataProvider>
+          <div className="app">
+            <Nav />
+            <CommandPalette />
+            <main>{children}</main>
+            <footer className="foot">
+              <div className="wrap">
+                <span>T2R Lab · Trade2Retire Academy research · all times are MT5 server time (GMT)</span>
+                <span>Historical tests and demo results, not a promise of future returns and not financial advice.</span>
+              </div>
+            </footer>
+          </div>
+        </DataProvider>
+      </body>
     </html>
   );
 }
