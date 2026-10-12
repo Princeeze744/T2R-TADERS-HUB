@@ -74,7 +74,8 @@ export default function Overview() {
               <Reveal delay={0.14}><p className="lead">A computer tested our zone strategies on Deriv synthetics, forex and metals, trade by trade, and only kept what held up on history it had never seen. Pick any day and see every trade on the chart.</p></Reveal>
               <Reveal delay={0.2}>
                 <div className="hero-cta">
-                  <Link href="/journal" className="btn primary">Open the trade journal <IcArrow s={16} /></Link>
+                  <Link href="/desk" className="btn primary"><span className="live-dot" />Signal Desk <IcArrow s={16} /></Link>
+                  <Link href="/journal" className="btn ghost">Trade journal</Link>
                   <Link href="/method" className="btn ghost">How it works</Link>
                 </div>
               </Reveal>
@@ -189,7 +190,7 @@ export default function Overview() {
               <span className="eyebrow">Live demo</span>
               <h2 className="h-sec" style={{ marginTop: 12, maxWidth: 760 }}>The real test is <em>happening now.</em></h2>
               <p className="lead" style={{ marginTop: 14 }}>Backtests can be lucky. So every setup is followed live on a demo account with real prices. {live.n ? `${live.n} live trades recorded so far: ${live.w} won, ${live.l} lost, ${live.o} still running.` : ''} Only setups that keep winning there reach members.</p>
-              <div className="hero-cta"><Link href="/journal?src=l" className="btn primary">See the live demo trades <IcArrow s={16} /></Link></div>
+              <div className="hero-cta"><Link href="/desk" className="btn primary">Open the Signal Desk <IcArrow s={16} /></Link><Link href="/journal?src=l" className="btn ghost">Live demo trades so far</Link></div>
             </div>
           </Reveal>
         </div>

@@ -3,15 +3,16 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { useData } from './DataProvider';
-import { IcHome, IcJournal, IcExplore, IcStrat, IcStar, IcBook, IcSearch } from './Icons';
+import { IcHome, IcJournal, IcExplore, IcStrat, IcStar, IcBook, IcSearch, IcRadio } from './Icons';
 
 export const PAGES = [
   { href: '/', label: 'Overview', Ic: IcHome },
-  { href: '/journal', label: 'Trade journal', short: 'Trades', Ic: IcJournal },
+  { href: '/desk', label: 'Signal Desk', short: 'Desk', Ic: IcRadio, live: true },
+  { href: '/journal', label: 'Journal', short: 'Trades', Ic: IcJournal },
   { href: '/watchlist', label: 'Watchlist', short: 'Watch', Ic: IcStar },
   { href: '/strategies', label: 'Strategies', short: 'Strategy', Ic: IcStrat },
-  { href: '/explorer', label: 'Backtest explorer', short: 'Backtest', Ic: IcExplore },
-  { href: '/method', label: 'How it works', short: 'Method', Ic: IcBook },
+  { href: '/explorer', label: 'Backtest', short: 'Backtest', Ic: IcExplore },
+  { href: '/method', label: 'Method', short: 'Method', Ic: IcBook, noTab: true },
 ];
 
 const isOn = (path, href) => (href === '/' ? path === '/' : path.startsWith(href));
@@ -32,7 +33,7 @@ export default function Nav() {
             {PAGES.map((p) => (
               <Link key={p.href} href={p.href} className={isOn(path, p.href) ? 'on' : ''}>
                 {isOn(path, p.href) && <motion.span layoutId="navpill" className="pill" transition={{ type: 'spring', bounce: 0.2, duration: 0.5 }} />}
-                {p.label}
+                {p.live && <span className="live-dot" style={{ display: 'inline-block', marginRight: 7, verticalAlign: 1 }} />}{p.label}
               </Link>
             ))}
           </nav>
@@ -50,7 +51,7 @@ export default function Nav() {
         </div>
       </header>
       <nav className="tabbar" aria-label="Main">
-        {PAGES.map((p) => (
+        {PAGES.filter((p) => !p.noTab).map((p) => (
           <Link key={p.href} href={p.href} className={isOn(path, p.href) ? 'on' : ''}>
             {isOn(path, p.href) && <motion.span layoutId="tabpill" className="pill" transition={{ type: 'spring', bounce: 0.2, duration: 0.5 }} />}
             <p.Ic s={20} />{p.short || p.label}

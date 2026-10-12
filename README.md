@@ -21,3 +21,9 @@ the nine strategies explained, and a trade journal where every trade can be open
 - `public/data/bars/` candles per market (written by `npm run sync`)
 - `mt5/T2R_BarExport.mq5` candle export script for MT5
 - `app/api/health` placeholder; the Telegram bot webhook and database link come here next
+
+## Signal Desk (live)
+- `supabase/schema.sql` creates the tables. Run it once in Supabase → SQL Editor.
+- Vercel environment variables: see `.env.example`.
+- The EA posts each event to `POST /api/ingest` with header `x-t2r-key`. The desk page (`/desk`) shows new signals within seconds.
+- Without the variables the desk shows a clearly labelled preview built from the replay.

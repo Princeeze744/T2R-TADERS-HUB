@@ -1,7 +1,8 @@
 'use client';
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { toTrades } from '@/lib/util';
+import { toTrades, dayKey, ratioOf } from '@/lib/util';
+import { sb, fetchAll, rowToTrade } from '@/lib/supabase-client';
 
 const Ctx = createContext(null);
 export const useData = () => useContext(Ctx);
@@ -23,9 +24,11 @@ export default function DataProvider({ children }) {
   const [raw, setRaw] = useState(null);
   const [err, setErr] = useState(null);
   const [risk, setRiskState] = useState(10);
+  const [liveRows, setLiveRows] = useState([]);
 
   useEffect(() => {
     load().then(setRaw).catch((e) => setErr(String(e)));
+    if (sb()) fetchAll('signals', (q) => q.in('status', ['active', 'won', 'lost']).order('t_signal', { ascending: true })).then(setLiveRows).catch(() => {});
     try { const r = parseFloat(localStorage.getItem('t2r_risk')); if (r > 0) setRiskState(r); } catch (e) { /* storage off */ }
   }, []);
 
@@ -44,11 +47,11 @@ export default function DataProvider({ children }) {
     const WATCH = lab.watch.map((w, i) => ({ i, a: w[0], s: w[1], v: w[2], sd: w[3], c: w[4], si: w[5], lv: w[6], st: w[7], b1: w[8], pw: w[9], z: w[10], house: w[11], fam: famOf(w[0]) }));
     const WSET = {};
     WATCH.forEach((w) => { WSET[wkey(w.a, w.s, w.v, w.sd, w.c)] = w; });
-    const TRADES = toTrades(tr.trades || [], famOf);
+    const TRADES = toTrades(tr.trades || [], famOf).concat(liveRows.map((r) => rowToTrade(r, famOf, dayKey, ratioOf))).sort((a, b) => a.tin - b.tin);
     const TBYID = {};
     TRADES.forEach((t) => { TBYID[t.id] = t; });
     return { MK, famOf, ROWS, WATCH, WSET, TRADES, TBYID, meta: lab.meta, tmeta: { gen: tr.gen, from: tr.from, to: tr.to } };
-  }, [raw]);
+  }, [raw, liveRows]);
 
   return (
     <Ctx.Provider value={{ data, risk, setRisk }}>
