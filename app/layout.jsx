@@ -7,9 +7,20 @@ import DataProvider from '@/components/DataProvider';
 import Nav from '@/components/Nav';
 import CommandPalette from '@/components/CommandPalette';
 
+const SITE = 'https://t2r-traders-hub.vercel.app';
+const DESC = 'Every signal, every trade, every result. Nine tested strategies on Deriv synthetics, forex and metals, with a full public record. By Trade2Retire Academy.';
 export const metadata = {
+  metadataBase: new URL(SITE),
   title: 'T2R Lab · Trade2Retire Academy',
-  description: 'Nine zone strategies tested on 150 markets, every trade counted, then followed live. Trade2Retire Academy research.',
+  description: DESC,
+  applicationName: 'T2R Lab',
+  openGraph: {
+    type: 'website', url: SITE, siteName: 'T2R Lab · Trade2Retire Academy',
+    title: 'T2R Lab · Every signal, every trade, every result',
+    description: DESC,
+    images: [{ url: '/og.jpg', width: 1200, height: 630, alt: 'T2R Lab by Trade2Retire Academy' }],
+  },
+  twitter: { card: 'summary_large_image', title: 'T2R Lab · Every signal, every trade, every result', description: DESC, images: ['/og.jpg'] },
 };
 export const viewport = { themeColor: '#06080c', width: 'device-width', initialScale: 1 };
 
