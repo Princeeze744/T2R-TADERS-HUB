@@ -68,7 +68,6 @@ export default function Desk() {
   const pingRef = useRef(ping);
   pingRef.current = ping;
   const [bal, setBalState] = useState(1000);
-  const [acct, setAcct] = useState([]);
   const [showRun, setShowRun] = useState(true);
   const [showWait, setShowWait] = useState(false);
   const seen = useRef({});
@@ -98,15 +97,7 @@ export default function Desk() {
   }, [day]);
 
   useEffect(() => { loadDay(); }, [loadDay]);
-  useEffect(() => {
-    const c = sb();
-    if (!c) return;
-    const since = Math.floor(Date.now() / 1000) - 36 * 3600;
-    c.from('account_snapshots').select('at,balance,equity,profit,positions,orders,ccy,demo,risk_pct').gte('at', since).order('at', { ascending: true }).limit(1000)
-      .then(({ data: d, error }) => { if (!error && d) setAcct(d); });
-    const ch = c.channel('acct').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'account_snapshots' }, (m) => { if (m.new) setAcct((L) => [...L.slice(-999), m.new]); }).subscribe();
-    return () => { c.removeChannel(ch); };
-  }, []);
+  // (the lab's own demo account is private and is not shown on the website)
   useEffect(() => {
     const c = sb();
     if (!c) return;
@@ -171,7 +162,7 @@ export default function Desk() {
 
   const floatR = act.reduce((a, r) => a + (r.r_float || 0), 0);
   const nFloat = act.filter((r) => r.r_float != null).length;
-  const pctPer = acct.length && acct[acct.length - 1].risk_pct ? acct[acct.length - 1].risk_pct : 1;
+  const pctPer = 1; // percentages assume 1% of the account per trade
   const toTrade = (r) => rowToTrade(r, data.famOf, dayKey, ratioOf);
   const list = feed.filter((r) => r.status !== 'cancelled' && r.status !== 'pending').map(toTrade);
   const openT = open ? list.find((t) => t.id === open) || null : null;
@@ -237,7 +228,7 @@ export default function Desk() {
         <Kpi l="Result (T2R rule)" v={S.tN ? f1(S.T) + 'R' : '–'} c={cl(S.T)} s="half off at 1:1, stop to entry" />
       </div>
 
-      {!preview && <Portfolio act={act} nFloat={nFloat} floatR={floatR} S={S} risk={risk} acct={acct} pctPer={pctPer} todayKey={todayKey} />}
+      {!preview && <Portfolio act={act} nFloat={nFloat} floatR={floatR} S={S} risk={risk} pctPer={pctPer} />}
 
       <div className="desk">
         <section>
@@ -327,7 +318,7 @@ function SignalCard({ r, fam, fresh, onOpen, risk, today, bal }) {
         </span>
       </div>
       <Lots r={r} bal={bal} />
-      <div className="note" style={{ marginTop: 8 }}>{r.strategy}{r.view ? ' · ' + r.view : ''}{r.stop_class ? ' · ' + r.stop_class : ''}{r.lots ? ' · lab demo account: ' + r.lots + ' lots' : ''}</div>
+      <div className="note" style={{ marginTop: 8 }}>{r.strategy}{r.view ? ' · ' + r.view : ''}{r.stop_class ? ' · ' + r.stop_class : ''}</div>
     </motion.div>
   );
 }
@@ -399,42 +390,20 @@ function Spark({ pts, h = 54 }) {
     </svg>
   );
 }
-function Portfolio({ act, nFloat, floatR, S, risk, acct, pctPer, todayKey }) {
+function Portfolio({ act, nFloat, floatR, S, risk, pctPer }) {
   const closedR = S.R, total = floatR + closedR;
-  const last = acct.length ? acct[acct.length - 1] : null;
-  const t0 = keyToTs(todayKey);
-  const firstToday = acct.find((a) => a.at >= t0) || acct[0];
-  const chg = last && firstToday ? last.equity - firstToday.equity : 0;
-  const chgPct = last && firstToday && firstToday.equity ? (100 * chg) / firstToday.equity : 0;
-  const cur = (v, c) => (v >= 0 ? '+' : '−') + (c === 'USD' || !c ? '$' : c + ' ') + Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 2, minimumFractionDigits: 2 });
-  const usd = (v) => (v >= 0 ? '' : '−') + '$' + Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 2, minimumFractionDigits: 2 });
+  const Cell = ({ k, v }) => (
+    <div><span>{k}</span><b className={cl(v)}>{f2(v)}R</b><small>{money(v, risk)} at ${risk} a trade · {f2(v * pctPer)}% at {pctPer}% a trade</small></div>
+  );
   return (
-    <div className="grid g2" style={{ marginTop: 16 }}>
-      <div className="card pad">
-        <div className="between"><span className="eyebrow">Live portfolio</span><span className="note">{act.length} running · {nFloat} priced</span></div>
-        <div className="pf">
-          <div><span>Floating now</span><b className={cl(floatR)}>{f2(floatR)}R</b><small>{money(floatR, risk)} · {f2(floatR * pctPer)}%</small></div>
-          <div><span>Closed today</span><b className={cl(closedR)}>{f2(closedR)}R</b><small>{money(closedR, risk)} · {f2(closedR * pctPer)}%</small></div>
-          <div><span>Today in total</span><b className={cl(total)}>{f2(total)}R</b><small>{money(total, risk)} · {f2(total * pctPer)}%</small></div>
-        </div>
-        <p className="note" style={{ margin: '10px 0 0' }}>Dollars at ${risk} risked per trade (change it at the top). Percent at {pctPer}% of the account per trade. Floating values refresh every 5 minutes.</p>
+    <div className="card pad" style={{ marginTop: 16 }}>
+      <div className="between"><span className="eyebrow">Live portfolio</span><span className="note">{act.length} running · {nFloat} priced · floating refreshes every 5 minutes</span></div>
+      <div className="pf">
+        <Cell k="Floating now (running trades)" v={floatR} />
+        <Cell k="Closed today" v={closedR} />
+        <Cell k="Today in total" v={total} />
       </div>
-      <div className="card pad">
-        <div className="between"><span className="eyebrow">The lab's demo account</span>{last && <span className={'badge ' + (last.demo ? 'soft' : 'lost')}>{last.demo ? 'DEMO' : 'NOT DEMO'}</span>}</div>
-        {last ? (
-          <>
-            <div className="pf">
-              <div><span>Balance</span><b>{usd(last.balance)}</b><small>{last.positions} open · {last.orders} pending</small></div>
-              <div><span>Equity</span><b>{usd(last.equity)}</b><small className={cl(last.profit)}>{cur(last.profit, last.ccy)} floating</small></div>
-              <div><span>Today</span><b className={cl(chg)}>{f2(chgPct)}%</b><small className={cl(chg)}>{cur(chg, last.ccy)}</small></div>
-            </div>
-            <Spark pts={acct.map((a) => a.equity)} />
-            <p className="note" style={{ margin: '6px 0 0' }}>Every signal is also placed on this demo account at {last.risk_pct || '–'}% risk, following the T2R rule (half off at TP1, stop to entry). Equity, last 36 hours.</p>
-          </>
-        ) : (
-          <p className="dim" style={{ marginTop: 14, fontSize: 14 }}>Appears once EA v1.55 starts trading the demo account. It posts the balance and equity every 5 minutes.</p>
-        )}
-      </div>
+      <p className="note" style={{ margin: '10px 0 0' }}>If you had taken every signal on the desk. Change the $ per trade at the top of the page.</p>
     </div>
   );
 }
