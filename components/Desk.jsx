@@ -67,6 +67,13 @@ export default function Desk() {
   const [open, setOpen] = useState(null);
   const pingRef = useRef(ping);
   pingRef.current = ping;
+  const [bal, setBalState] = useState(1000);
+  const [acct, setAcct] = useState([]);
+  const [showRun, setShowRun] = useState(true);
+  const [showWait, setShowWait] = useState(false);
+  const seen = useRef({});
+  useEffect(() => { try { const b = parseFloat(localStorage.getItem('t2r_bal')); if (b > 0) setBalState(b); } catch (e) { /* storage off */ } }, []);
+  const setBal = (v) => { setBalState(v); try { localStorage.setItem('t2r_bal', String(v)); } catch (e) { /* storage off */ } };
 
   // preview mode (until live data exists)
   const [preview, setPreview] = useState(false);
@@ -94,6 +101,15 @@ export default function Desk() {
   useEffect(() => {
     const c = sb();
     if (!c) return;
+    const since = Math.floor(Date.now() / 1000) - 36 * 3600;
+    c.from('account_snapshots').select('at,balance,equity,profit,positions,orders,ccy,demo,risk_pct').gte('at', since).order('at', { ascending: true }).limit(1000)
+      .then(({ data: d, error }) => { if (!error && d) setAcct(d); });
+    const ch = c.channel('acct').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'account_snapshots' }, (m) => { if (m.new) setAcct((L) => [...L.slice(-999), m.new]); }).subscribe();
+    return () => { c.removeChannel(ch); };
+  }, []);
+  useEffect(() => {
+    const c = sb();
+    if (!c) return;
     const ch = c.channel('desk')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'signals' }, (msg) => {
         const r = msg.new;
@@ -104,7 +120,8 @@ export default function Desk() {
           const rest = L.filter((x) => x.id !== r.id);
           return r.status === 'pending' || r.status === 'active' ? [r, ...rest] : rest;
         });
-        markFresh(r.id);
+        const key = r.status + (r.hit_tp1 ? '1' : '0');
+        if (seen.current[r.id] !== key) { seen.current[r.id] = key; markFresh(r.id); }
         if (msg.eventType === 'INSERT' && pingRef.current) chime();
       })
       .subscribe((s) => { if (s === 'SUBSCRIBED') setConn('live'); if (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT') setConn('error'); });
@@ -152,6 +169,9 @@ export default function Desk() {
     return o;
   }, [feed]);
 
+  const floatR = act.reduce((a, r) => a + (r.r_float || 0), 0);
+  const nFloat = act.filter((r) => r.r_float != null).length;
+  const pctPer = acct.length && acct[acct.length - 1].risk_pct ? acct[acct.length - 1].risk_pct : 1;
   const toTrade = (r) => rowToTrade(r, data.famOf, dayKey, ratioOf);
   const list = feed.filter((r) => r.status !== 'cancelled' && r.status !== 'pending').map(toTrade);
   const openT = open ? list.find((t) => t.id === open) || null : null;
@@ -200,6 +220,10 @@ export default function Desk() {
           )}
           <Seg id="dfam" value={fam} onChange={setFam} options={['All', ...FAMS].map((f) => ({ value: f, label: f === 'Boom and Crash' ? 'Boom/Crash' : f }))} />
           <input className="field-btn" style={{ width: 180, outline: 0 }} placeholder="Search a market" value={q} onChange={(e) => setQ(e.target.value)} />
+          <label className="risk" title="Your account size. Every card shows the lot size for 0.5%, 1% and 2% of it.">
+            <span className="lbl">Your balance</span>$
+            <input type="number" min="10" step="10" value={bal} onChange={(e) => { const v = parseFloat(e.target.value); if (v > 0) setBal(v); }} aria-label="Your account balance" style={{ width: 70 }} />
+          </label>
           <Toggle checked={ping} onChange={(v) => { setPing(v); if (v) chime(); }}>Sound on new signal</Toggle>
         </div>
       </div>
@@ -213,6 +237,8 @@ export default function Desk() {
         <Kpi l="Result (T2R rule)" v={S.tN ? f1(S.T) + 'R' : '–'} c={cl(S.T)} s="half off at 1:1, stop to entry" />
       </div>
 
+      {!preview && <Portfolio act={act} nFloat={nFloat} floatR={floatR} S={S} risk={risk} acct={acct} pctPer={pctPer} todayKey={todayKey} />}
+
       <div className="desk">
         <section>
           <div className="between" style={{ margin: '24px 0 12px' }}>
@@ -222,7 +248,7 @@ export default function Desk() {
           <div className="feed">
             <AnimatePresence initial={false}>
               {feed.slice(0, 300).map((r) => (
-                <SignalCard key={r.id} r={r} today={day === todayKey} fam={r.family || data.famOf(r.market)} fresh={fresh[r.id] && Date.now() - fresh[r.id] < 25000} risk={risk}
+                <SignalCard key={r.id} r={r} bal={bal} today={day === todayKey} fam={r.family || data.famOf(r.market)} fresh={fresh[r.id] && Date.now() - fresh[r.id] < 25000} risk={risk}
                   onOpen={r.status === 'active' || r.status === 'won' || r.status === 'lost' ? () => setOpen('s' + r.id) : null} />
               ))}
             </AnimatePresence>
@@ -230,20 +256,15 @@ export default function Desk() {
           </div>
         </section>
         <aside className="desk-side">
-          <div className="card pad">
-            <div className="between"><div className="eyebrow">Running now</div><span className="badge open">{act.length}</span></div>
-            <div style={{ marginTop: 10 }}>
-              {act.slice(0, 60).map((r) => <Mini key={r.id} r={r} onOpen={() => goTo(r.id)} />)}
-              {!act.length && <p className="dim" style={{ fontSize: 13.5, margin: '8px 0 0' }}>No trade running right now.</p>}
-            </div>
-          </div>
-          <div className="card pad" style={{ marginTop: 14 }}>
-            <div className="between"><div className="eyebrow">Waiting for entry</div><span className="badge soft">{wait.length}</span></div>
-            <div style={{ marginTop: 10 }}>
-              {wait.slice(0, 60).map((r) => <Mini key={r.id} r={r} onOpen={() => goTo(r.id)} />)}
-              {!wait.length && <p className="dim" style={{ fontSize: 13.5, margin: '8px 0 0' }}>No pending orders.</p>}
-            </div>
-          </div>
+          <Panel title="Running now" count={act.length} tone="open" open={showRun} onToggle={() => setShowRun((x) => !x)}
+            extra={nFloat ? <span className={'mono ' + cl(floatR)}>{f2(floatR)}R</span> : null}>
+            {act.map((r) => <Mini key={r.id} r={r} onOpen={() => goTo(r.id)} />)}
+            {!act.length && <p className="dim" style={{ fontSize: 13.5, margin: '8px 0' }}>No trade running right now.</p>}
+          </Panel>
+          <Panel title="Waiting for entry" count={wait.length} tone="soft" open={showWait} onToggle={() => setShowWait((x) => !x)}>
+            {wait.map((r) => <Mini key={r.id} r={r} onOpen={() => goTo(r.id)} />)}
+            {!wait.length && <p className="dim" style={{ fontSize: 13.5, margin: '8px 0' }}>No pending orders.</p>}
+          </Panel>
           <p className="note" style={{ marginTop: 12 }}>{showLive ? (conn === 'live' ? 'Connected. Updates arrive by themselves.' : conn === 'error' ? 'Connection dropped. Retrying every minute.' : 'Connecting…') : ''}</p>
         </aside>
       </div>
@@ -278,7 +299,7 @@ function Steps({ r }) {
   );
 }
 
-function SignalCard({ r, fam, fresh, onOpen, risk, today }) {
+function SignalCard({ r, fam, fresh, onOpen, risk, today, bal }) {
   const s = ST[r.status] || ST.pending;
   const closed = r.status === 'won' || r.status === 'lost';
   const ref = r.entry;
@@ -305,7 +326,8 @@ function SignalCard({ r, fam, fresh, onOpen, risk, today }) {
           {r.r_t2r != null && closed && <small className="dim"> · T2R rule {f2(r.r_t2r)}R</small>}
         </span>
       </div>
-      <div className="note" style={{ marginTop: 8 }}>{r.strategy}{r.view ? ' · ' + r.view : ''}{r.stop_class ? ' · ' + r.stop_class : ''}</div>
+      <Lots r={r} bal={bal} />
+      <div className="note" style={{ marginTop: 8 }}>{r.strategy}{r.view ? ' · ' + r.view : ''}{r.stop_class ? ' · ' + r.stop_class : ''}{r.lots ? ' · lab demo account: ' + r.lots + ' lots' : ''}</div>
     </motion.div>
   );
 }
@@ -318,5 +340,101 @@ function Mini({ r, onOpen }) {
       </span>
       <small className="mono">{r.r_float != null ? f2(r.r_float) + 'R' : fmtPrice(r.entry, r.entry)}</small>
     </button>
+  );
+}
+
+// ---------- a side panel that folds open and shut ----------
+function Panel({ title, count, tone, open, onToggle, extra, children }) {
+  return (
+    <div className="card panel" style={{ marginBottom: 14 }}>
+      <button type="button" className="panel-h" onClick={onToggle} aria-expanded={open}>
+        <span className="eyebrow">{title}</span>
+        <span className="row" style={{ gap: 10 }}>{extra}<span className={'badge ' + tone}>{count}</span><span className="chev" style={{ transform: open ? 'rotate(180deg)' : 'none' }}>⌄</span></span>
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.3, ease }} style={{ overflow: 'hidden' }}>
+            <div className="panel-b">{children}</div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ---------- lot sizes for 0.5%, 1% and 2% of the viewer's balance ----------
+function lotFor(money, rpl, step, min) {
+  if (!rpl || rpl <= 0 || !step || step <= 0) return null;
+  const v = Math.floor(money / rpl / step + 1e-9) * step;
+  return v >= min - 1e-12 ? v : 0;
+}
+function stepDigits(step) { let d = 0; while (d < 4 && Math.abs(step * 10 ** d - Math.round(step * 10 ** d)) > 1e-9) d++; return d; }
+function Lots({ r, bal }) {
+  if (!r.risk_per_lot || !r.vol_step) return null;
+  const d = stepDigits(r.vol_step);
+  const cell = (pct) => {
+    const v = lotFor(bal * pct / 100, r.risk_per_lot, r.vol_step, r.vol_min || r.vol_step);
+    if (v === null) return '–';
+    if (v === 0) return <span className="dimmer" title="Even the smallest lot risks more than this">min {Number(r.vol_min).toFixed(d)} = {(100 * r.vol_min * r.risk_per_lot / bal).toFixed(1)}%</span>;
+    return <b className="mono">{v.toFixed(d)}</b>;
+  };
+  return (
+    <div className="lots">
+      <span className="lots-k">Lot size for ${Number(bal).toLocaleString('en-US')}</span>
+      <span>0.5% {cell(0.5)}</span><span>1% {cell(1)}</span><span>2% {cell(2)}</span>
+    </div>
+  );
+}
+
+// ---------- the live portfolio: everything running and closed today, plus the lab's demo account ----------
+function Spark({ pts, h = 54 }) {
+  if (pts.length < 2) return null;
+  const W = 300, mn = Math.min(...pts), mx = Math.max(...pts), rg = mx - mn || 1;
+  const d = pts.map((v, i) => (i ? 'L' : 'M') + ((i / (pts.length - 1)) * W).toFixed(1) + ' ' + (h - 4 - ((v - mn) / rg) * (h - 8)).toFixed(1)).join(' ');
+  const up = pts[pts.length - 1] >= pts[0];
+  return (
+    <svg viewBox={`0 0 ${W} ${h}`} width="100%" height={h} preserveAspectRatio="none" aria-hidden="true">
+      <path d={d + ` L${W} ${h} L0 ${h} Z`} fill={up ? 'rgba(54,211,153,.12)' : 'rgba(255,107,107,.12)'} />
+      <path d={d} fill="none" stroke={up ? '#36d399' : '#ff6b6b'} strokeWidth="2" vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
+function Portfolio({ act, nFloat, floatR, S, risk, acct, pctPer, todayKey }) {
+  const closedR = S.R, total = floatR + closedR;
+  const last = acct.length ? acct[acct.length - 1] : null;
+  const t0 = keyToTs(todayKey);
+  const firstToday = acct.find((a) => a.at >= t0) || acct[0];
+  const chg = last && firstToday ? last.equity - firstToday.equity : 0;
+  const chgPct = last && firstToday && firstToday.equity ? (100 * chg) / firstToday.equity : 0;
+  const cur = (v, c) => (v >= 0 ? '+' : '−') + (c === 'USD' || !c ? '$' : c + ' ') + Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 2, minimumFractionDigits: 2 });
+  const usd = (v) => (v >= 0 ? '' : '−') + '$' + Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 2, minimumFractionDigits: 2 });
+  return (
+    <div className="grid g2" style={{ marginTop: 16 }}>
+      <div className="card pad">
+        <div className="between"><span className="eyebrow">Live portfolio</span><span className="note">{act.length} running · {nFloat} priced</span></div>
+        <div className="pf">
+          <div><span>Floating now</span><b className={cl(floatR)}>{f2(floatR)}R</b><small>{money(floatR, risk)} · {f2(floatR * pctPer)}%</small></div>
+          <div><span>Closed today</span><b className={cl(closedR)}>{f2(closedR)}R</b><small>{money(closedR, risk)} · {f2(closedR * pctPer)}%</small></div>
+          <div><span>Today in total</span><b className={cl(total)}>{f2(total)}R</b><small>{money(total, risk)} · {f2(total * pctPer)}%</small></div>
+        </div>
+        <p className="note" style={{ margin: '10px 0 0' }}>Dollars at ${risk} risked per trade (change it at the top). Percent at {pctPer}% of the account per trade. Floating values refresh every 5 minutes.</p>
+      </div>
+      <div className="card pad">
+        <div className="between"><span className="eyebrow">The lab's demo account</span>{last && <span className={'badge ' + (last.demo ? 'soft' : 'lost')}>{last.demo ? 'DEMO' : 'NOT DEMO'}</span>}</div>
+        {last ? (
+          <>
+            <div className="pf">
+              <div><span>Balance</span><b>{usd(last.balance)}</b><small>{last.positions} open · {last.orders} pending</small></div>
+              <div><span>Equity</span><b>{usd(last.equity)}</b><small className={cl(last.profit)}>{cur(last.profit, last.ccy)} floating</small></div>
+              <div><span>Today</span><b className={cl(chg)}>{f2(chgPct)}%</b><small className={cl(chg)}>{cur(chg, last.ccy)}</small></div>
+            </div>
+            <Spark pts={acct.map((a) => a.equity)} />
+            <p className="note" style={{ margin: '6px 0 0' }}>Every signal is also placed on this demo account at {last.risk_pct || '–'}% risk, following the T2R rule (half off at TP1, stop to entry). Equity, last 36 hours.</p>
+          </>
+        ) : (
+          <p className="dim" style={{ marginTop: 14, fontSize: 14 }}>Appears once EA v1.55 starts trading the demo account. It posts the balance and equity every 5 minutes.</p>
+        )}
+      </div>
+    </div>
   );
 }

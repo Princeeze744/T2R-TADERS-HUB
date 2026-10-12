@@ -461,3 +461,16 @@ footer.foot .wrap{display:flex;justify-content:space-between;gap:20px;flex-wrap:
 .steps-line .st.bad i{background:var(--loss);border-color:var(--loss)}
 .steps-line .st+.st::before{content:"";position:absolute;left:-12px;top:50%;width:8px;height:1px;background:var(--line2)}
 @media (max-width:1380px){.search-btn .lbl{display:none}}
+/* desk v2.5 */
+.panel{padding:0;overflow:hidden}
+.panel-h{display:flex;justify-content:space-between;align-items:center;width:100%;padding:16px 18px;text-align:left}
+.panel-h:hover{background:var(--s1)}
+.panel-h .chev{display:inline-block;transition:transform .3s var(--ease);color:var(--mute);font-size:18px;line-height:1;margin-top:-6px}
+.panel-b{max-height:380px;overflow-y:auto;padding:0 12px 12px;scrollbar-width:thin}
+.pf{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:14px}
+.pf span{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.pf b{display:block;font-family:var(--serif);font-weight:400;font-size:clamp(26px,3vw,34px);line-height:1.1}
+.pf small{display:block;font-family:var(--mono);font-size:12px;color:var(--mute)}
+.lots{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center;margin-top:10px;padding:8px 12px;border-radius:10px;background:rgba(216,178,106,.06);border:1px dashed rgba(216,178,106,.25);font-size:12.5px;color:var(--mute)}
+.lots-k{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--gold)}
+.lots b{color:var(--text);font-weight:500}
