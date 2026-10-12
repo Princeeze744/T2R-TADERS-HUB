@@ -129,10 +129,16 @@ export default function Desk() {
     pRows.forEach((r) => { const k = r.id + r.status; if (!prevIds.current.has(k)) { prevIds.current.add(k); markFresh(r.id); } });
   }, [pRows, preview]);
 
-  const all = preview ? pRows : [...rows.values()];
+  const all = useMemo(() => {
+    if (preview) return pRows;
+    const m = new Map(rows);
+    if (day === todayKey) running.forEach((r) => { if (!m.has(r.id)) m.set(r.id, r); });
+    return [...m.values()];
+  }, [preview, pRows, rows, running, day, todayKey]);
+  const goTo = (id) => { const el = document.getElementById('sig-' + id); if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); markFresh(id); } };
   const runAll = preview ? pRows.filter((r) => r.status === 'active') : running;
   const match = (r) => (fam === 'All' || (r.family || data.famOf(r.market)) === fam) && (!q || (r.market + ' ' + r.strategy).toLowerCase().includes(q.toLowerCase()));
-  const feed = all.filter(match).sort((a, b) => (b.t_signal || 0) - (a.t_signal || 0));
+  const feed = all.filter(match).sort((a, b) => (b.t_signal || b.t_fill || 0) - (a.t_signal || a.t_fill || 0));
   const act = runAll.filter((r) => r.status === 'active' && match(r));
   const wait = runAll.filter((r) => r.status === 'pending' && match(r));
   const S = useMemo(() => {
@@ -199,7 +205,7 @@ export default function Desk() {
       </div>
 
       <div className="kpis" style={{ marginTop: 6 }}>
-        <Kpi l={day === todayKey || preview ? 'Signals today' : 'Signals'} v={nf(S.n)} s={`${S.c} cancelled`} />
+        <Kpi l={day === todayKey || preview ? 'On the desk today' : 'Signals'} v={nf(S.n)} s={`${S.c} cancelled`} />
         <Kpi l="Running now" v={act.length} s="in the trade" c="o" />
         <Kpi l="Waiting for entry" v={wait.length} s="pending orders" />
         <Kpi l="Won · lost" v={`${S.w} · ${S.l}`} s={pc(S.w, S.w + S.l) + ' win rate'} />
@@ -216,7 +222,7 @@ export default function Desk() {
           <div className="feed">
             <AnimatePresence initial={false}>
               {feed.slice(0, 300).map((r) => (
-                <SignalCard key={r.id} r={r} fam={r.family || data.famOf(r.market)} fresh={fresh[r.id] && Date.now() - fresh[r.id] < 25000} risk={risk}
+                <SignalCard key={r.id} r={r} today={day === todayKey} fam={r.family || data.famOf(r.market)} fresh={fresh[r.id] && Date.now() - fresh[r.id] < 25000} risk={risk}
                   onOpen={r.status === 'active' || r.status === 'won' || r.status === 'lost' ? () => setOpen('s' + r.id) : null} />
               ))}
             </AnimatePresence>
@@ -227,14 +233,14 @@ export default function Desk() {
           <div className="card pad">
             <div className="between"><div className="eyebrow">Running now</div><span className="badge open">{act.length}</span></div>
             <div style={{ marginTop: 10 }}>
-              {act.slice(0, 40).map((r) => <Mini key={r.id} r={r} onOpen={() => setOpen('s' + r.id)} />)}
+              {act.slice(0, 60).map((r) => <Mini key={r.id} r={r} onOpen={() => goTo(r.id)} />)}
               {!act.length && <p className="dim" style={{ fontSize: 13.5, margin: '8px 0 0' }}>No trade running right now.</p>}
             </div>
           </div>
           <div className="card pad" style={{ marginTop: 14 }}>
             <div className="between"><div className="eyebrow">Waiting for entry</div><span className="badge soft">{wait.length}</span></div>
             <div style={{ marginTop: 10 }}>
-              {wait.slice(0, 40).map((r) => <Mini key={r.id} r={r} />)}
+              {wait.slice(0, 60).map((r) => <Mini key={r.id} r={r} onOpen={() => goTo(r.id)} />)}
               {!wait.length && <p className="dim" style={{ fontSize: 13.5, margin: '8px 0 0' }}>No pending orders.</p>}
             </div>
           </div>
@@ -272,15 +278,15 @@ function Steps({ r }) {
   );
 }
 
-function SignalCard({ r, fam, fresh, onOpen, risk }) {
+function SignalCard({ r, fam, fresh, onOpen, risk, today }) {
   const s = ST[r.status] || ST.pending;
   const closed = r.status === 'won' || r.status === 'lost';
   const ref = r.entry;
   return (
     <motion.div layout initial={{ opacity: 0, y: -16, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45, ease }}
-      className={'card sig' + (fresh ? ' fresh' : '') + (onOpen ? ' click' : '') + ' st-' + r.status} onClick={onOpen || undefined} role={onOpen ? 'button' : undefined} tabIndex={onOpen ? 0 : undefined}>
+      id={'sig-' + r.id} className={'card sig' + (fresh ? ' fresh' : '') + (onOpen ? ' click' : '') + ' st-' + r.status} onClick={onOpen || undefined} role={onOpen ? 'button' : undefined} tabIndex={onOpen ? 0 : undefined}>
       <div className="sig-top">
-        <span className="mono dim" style={{ fontSize: 12.5 }}>{hhmm(r.t_signal)}</span>
+        <span className="mono dim" style={{ fontSize: 12.5 }}>{r.t_signal ? (today && dayKey(r.t_signal) !== dayKey(Date.now() / 1000) ? dayLabel(dayKey(r.t_signal)) + ' ' : '') + hhmm(r.t_signal) : 'carried over'}</span>
         <span className="sig-mk">{r.market}<small>{fam}</small></span>
         <span className={'badge ' + (r.dir === 'buy' ? 'buy' : 'sell')}>{orderLabel(r)}</span>
         <span className={'badge ' + s.c} style={{ marginLeft: 'auto' }}>{fresh && !closed ? <><span className="dot" />{s.l}</> : s.l}</span>
@@ -306,11 +312,11 @@ function SignalCard({ r, fam, fresh, onOpen, risk }) {
 
 function Mini({ r, onOpen }) {
   return (
-    <button type="button" className="opt" style={{ padding: '9px 6px', borderBottom: '1px solid var(--line)', borderRadius: 0 }} onClick={onOpen} disabled={!onOpen}>
+    <button type="button" className="opt" style={{ padding: '9px 6px', borderBottom: '1px solid var(--line)', borderRadius: 0 }} onClick={onOpen}>
       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         <span className={'badge ' + (r.dir === 'buy' ? 'buy' : 'sell')} style={{ marginRight: 8 }}>{r.dir.toUpperCase()}</span>{r.market}
       </span>
-      <small className="mono">{r.r_float != null ? f2(r.r_float) + 'R' : hhmm(r.t_signal)}</small>
+      <small className="mono">{r.r_float != null ? f2(r.r_float) + 'R' : fmtPrice(r.entry, r.entry)}</small>
     </button>
   );
 }

@@ -3,10 +3,11 @@
 //   body: one event object, or { "events": [ ... ] }
 // Event: { id, kind, at, price?, r?, r_t2r?, r_float?, market, strategy, view, side, stop_class, dir,
 //          order_type, entry, stop, tp1, target, rr, family?, note? }
-// kind: signal | activated | tp1 | target | stop | breakeven | cancel | update
+// kind: signal | activated | tp1 | target | stop | breakeven | cancel | update | sync
 import { dbReady, rest } from '@/lib/supabase-server';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 30;
 
 const FIELDS = ['market', 'family', 'strategy', 'view', 'side', 'stop_class', 'dir', 'order_type', 'entry', 'stop', 'tp1', 'target', 'rr', 'note'];
 const num = (v) => (v === undefined || v === null || v === '' ? undefined : Number(v));
@@ -15,7 +16,13 @@ function rowFor(e) {
   const row = { id: String(e.id) };
   for (const f of FIELDS) if (e[f] !== undefined && e[f] !== null && e[f] !== '') row[f] = ['entry', 'stop', 'tp1', 'target'].includes(f) ? num(e[f]) : String(e[f]);
   const at = num(e.at);
+  if (num(e.t_signal) !== undefined) row.t_signal = num(e.t_signal);
+  if (num(e.t_fill) !== undefined) row.t_fill = num(e.t_fill);
   switch (e.kind) {
+    case 'sync': // the EA restarted: restate an order already on its book
+      if (['pending', 'active'].includes(e.status)) row.status = e.status;
+      row.hit_tp1 = e.hit_tp1 === true;
+      break;
     case 'signal':
       row.t_signal = at;
       if (row.order_type === 'market') { row.status = 'active'; row.t_fill = at; } else row.status = 'pending';
@@ -45,10 +52,16 @@ export async function POST(req) {
   const valid = events.filter((e) => e && e.id && e.kind);
   if (!valid.length) return Response.json({ ok: false, error: 'no events' }, { status: 400 });
   try {
-    for (const e of valid) {
-      await rest('signals?on_conflict=id', { method: 'POST', body: [rowFor(e)], prefer: 'resolution=merge-duplicates,return=minimal' });
-      if (e.kind !== 'update') await rest('signal_events', { method: 'POST', body: [{ signal_id: String(e.id), kind: e.kind, at: num(e.at), price: num(e.price), r: num(e.r) }], prefer: 'return=minimal' });
-    }
+    // several events for one signal in a batch become one row (later events win), in the order they happened
+    const merged = new Map();
+    for (const e of valid) { const r = rowFor(e); merged.set(r.id, { ...(merged.get(r.id) || {}), ...r }); }
+    // the database wants rows with the same columns in one call
+    const groups = new Map();
+    for (const r of merged.values()) { const k = Object.keys(r).sort().join(','); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); }
+    for (const rows of groups.values()) await rest('signals?on_conflict=id', { method: 'POST', body: rows, prefer: 'resolution=merge-duplicates,return=minimal' });
+    const ev = valid.filter((e) => e.kind !== 'update' && e.kind !== 'sync')
+      .map((e) => ({ signal_id: String(e.id), kind: e.kind, at: num(e.at) ?? null, price: num(e.price) ?? null, r: num(e.r) ?? null }));
+    if (ev.length) await rest('signal_events', { method: 'POST', body: ev, prefer: 'return=minimal' });
     return Response.json({ ok: true, saved: valid.length });
   } catch (err) {
     return Response.json({ ok: false, error: String(err.message || err) }, { status: 500 });
