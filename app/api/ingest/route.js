@@ -5,9 +5,11 @@
 //          order_type, entry, stop, tp1, target, rr, family?, note? }
 // kind: signal | activated | tp1 | target | stop | breakeven | cancel | update | sync
 import { dbReady, rest } from '@/lib/supabase-server';
+import { waitUntil } from '@vercel/functions';
+import { fanout } from '@/lib/bot';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 const FIELDS = ['market', 'family', 'strategy', 'view', 'side', 'stop_class', 'dir', 'order_type', 'entry', 'stop', 'tp1', 'target', 'rr', 'note', 'risk_per_lot', 'vol_min', 'vol_step', 'lots', 'ccy'];
 const NUMS = ['entry', 'stop', 'tp1', 'target', 'risk_per_lot', 'vol_min', 'vol_step', 'lots'];
@@ -84,6 +86,8 @@ export async function POST(req) {
     const ev = valid.filter((e) => e.kind !== 'update' && e.kind !== 'sync')
       .map((e) => ({ signal_id: String(e.id), kind: e.kind, at: num(e.at) ?? null, price: num(e.price) ?? null, r: num(e.r) ?? null }));
     if (ev.length) await rest('signal_events', { method: 'POST', body: ev, prefer: 'return=minimal' });
+    // members: new premium signals and their updates go out by direct message, after the EA has its answer
+    waitUntil(fanout(valid).catch(() => {}));
     return Response.json({ ok: true, saved: all.length });
   } catch (err) {
     return Response.json({ ok: false, error: String(err.message || err) }, { status: 500 });

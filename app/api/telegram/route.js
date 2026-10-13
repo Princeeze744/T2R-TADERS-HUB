@@ -1,10 +1,12 @@
 // T2R Signal Hub - results bot. Telegram calls this address for every message and button press.
 //   setWebhook url = https://<site>/api/telegram , secret_token = TELEGRAM_WEBHOOK_SECRET
+// Members: /start -> free trial -> signals by direct message -> subscribe (Paystack). Admin: /grant /revoke /members /setup
 // Buttons: market group -> period (today, yesterday, week, month, calendar) -> results card. Telegram-only or all signals.
 import { dbReady, rest } from '@/lib/supabase-server';
+import { ADMIN, PRODUCT, TRIAL_DAYS, PLAN_DAYS, payOn, priceTxt, payLink, member, touch, hasAccess, daysLeft, setMember, extend, dateTxt, ubtn } from '@/lib/bot';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 20;
+export const maxDuration = 30;
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const SECRET = process.env.TELEGRAM_WEBHOOK_SECRET;
@@ -149,6 +151,102 @@ async function resultsCard(g, p, s) {
   return { text: t, kb };
 }
 
+// ---------- members ----------
+const SUPPORT = process.env.SUPPORT_URL || '';
+const say = (chat, text, kb) => tg('sendMessage', { chat_id: chat, parse_mode: 'HTML', text, disable_web_page_preview: true, ...(kb ? { reply_markup: { inline_keyboard: kb } } : {}) });
+const toAdmin = (text) => tg('sendMessage', { chat_id: ADMIN, parse_mode: 'HTML', text, disable_web_page_preview: true }).catch(() => {});
+const who = (m) => `${esc(m.first_name || 'Member')}${m.username ? ' @' + esc(m.username) : ''} (<code>${m.tg_id}</code>)`;
+const resultsBtn = btn('📊 Live results', 'r|bc|7d|a');
+
+function welcome(m) {
+  const name = m.first_name ? `, ${esc(m.first_name)}` : '';
+  if (hasAccess(m)) {
+    const d = daysLeft(m);
+    return {
+      text: `✅ <b>You're in${name}.</b>\nSignals arrive in this chat automatically.\n\nAccess until <b>${dateTxt(m.access_until)}</b> (${d >= 1 ? Math.floor(d) + ' days' : 'less than a day'} left).` +
+        (m.balance ? `\nLot sizes are worked out for a balance of <b>${m.balance}</b>.` : `\n\n📦 Send your account balance, e.g. <code>500</code>, and every card will show your exact lot size.`),
+      kb: [[btn('📦 Set my balance', 'bal'), resultsBtn], [btn('ℹ️ How it works', 'how'), btn('💳 Extend', 'sub')]],
+    };
+  }
+  let t = `👋 <b>Welcome${name}, to ${esc(PRODUCT)}</b>\n\nBoom, Crash and DEX signals from a system we test live, in public, every day. They come straight to this chat:\n` +
+    `• entry, stop, take-profit and target on every card\n• your exact lot size for your balance\n• an update under each signal: filled, +1R, target, stop\n\n` +
+    `📊 Every result is public, wins and losses. Tap <b>Live results</b> and judge for yourself.\n\n`;
+  if (!m.trial_used) {
+    t += `🎁 Start with a <b>${TRIAL_DAYS}-day free trial</b>. No card needed.`;
+    return { text: t, kb: [[btn(`🎁 Start my ${TRIAL_DAYS}-day free trial`, 'trial')], [resultsBtn, btn('ℹ️ How it works', 'how')]] };
+  }
+  t += `Your access has ended. ${payOn() ? `Continue for <b>${priceTxt()}</b>.` : 'Tap Subscribe and we will set you up.'}`;
+  return { text: t, kb: [[btn('💳 Subscribe', 'sub')], [resultsBtn, btn('ℹ️ How it works', 'how')]] };
+}
+const HOW = `ℹ️ <b>How it works</b>\n\n1️⃣ A card arrives: BUY or SELL, entry, stop, TP1 and target.\n2️⃣ Place it with your lot size. Send your balance once and we work it out for you.\n` +
+  `3️⃣ At +1R we tell you: bank half and move the stop to entry. From there the trade can't lose.\n4️⃣ Filled, target, stop or cancel: we reply under the card every time.\n\n` +
+  `We trade <b>with the spike</b>: buys on Boom, sells on Crash. Risk 1% of your account or less per trade.\n\nEvery result is on the public record: /results`;
+
+async function startTrial(chat, m) {
+  if (hasAccess(m)) { const w = welcome(m); return say(chat, w.text, w.kb); }
+  if (m.trial_used) return say(chat, 'Your free trial has already been used.', [[btn('💳 Subscribe', 'sub')], [resultsBtn]]);
+  const until = await extend(m.tg_id, TRIAL_DAYS);
+  await setMember(m.tg_id, { trial_used: true });
+  await say(chat, `🎉 <b>Your free trial is on!</b>\nFor the next ${TRIAL_DAYS} days every spike signal comes straight here. Access until <b>${dateTxt(until)}</b>.\n\n` +
+    `📦 One thing first: send your account balance as a number, e.g. <code>500</code>, so each card shows your exact lot size.`, [[btn('ℹ️ How it works', 'how'), resultsBtn]]);
+  await toAdmin(`🆕 Trial started: ${who(m)}`);
+}
+
+async function subscribe(chat, m) {
+  if (!payOn()) {
+    await say(chat, `💳 <b>Subscriptions open very soon.</b>\nWe have your name. We'll message you here to set you up.`, SUPPORT ? [[ubtn('💬 Message us', SUPPORT)]] : undefined);
+    return toAdmin(`💳 Wants to subscribe: ${who(m)}\nGive access: <code>/grant ${m.tg_id} ${PLAN_DAYS}</code>`);
+  }
+  if (!m.email) return say(chat, '📧 Send your email address for your Paystack receipt, then tap Subscribe again (or it continues automatically).');
+  const url = await payLink(m);
+  if (!url) { await toAdmin(`⚠️ Paystack link failed for ${who(m)}`); return say(chat, 'The payment page could not open just now. Please try again in a minute.'); }
+  return say(chat, `💳 <b>${esc(PRODUCT)}</b> · <b>${priceTxt()}</b>\nPay securely with Paystack: card, bank transfer or USSD. Your access is added automatically the moment payment lands.` +
+    (hasAccess(m) ? '\n\nYour days left are kept. The new days are added on top.' : ''), [[ubtn(`💳 Pay ${priceTxt()}`, url)]]);
+}
+
+async function adminCmd(chat, txt) {
+  const [cmd, a1, a2] = txt.split(/\s+/);
+  const find = async (x) => {
+    if (!x) return null;
+    if (/^\d+$/.test(x)) return member(x);
+    const r = await rest(`members?username=ilike.${encodeURIComponent(x.replace(/^@/, ''))}&select=*`);
+    return r?.[0] || null;
+  };
+  if (cmd === '/grant') {
+    const m = await find(a1);
+    if (!m) return say(chat, 'Member not found. They must press Start in the bot first. Use: <code>/grant 12345 14</code> or <code>/grant @name 14</code>');
+    const days = Number(a2 || PLAN_DAYS);
+    const until = await extend(m.tg_id, days);
+    await say(m.tg_id, `✅ <b>Access added: ${days} days.</b>\nSignals arrive here automatically until <b>${dateTxt(until)}</b>.`).catch(() => {});
+    return say(chat, `✅ ${who(m)} now has access until ${dateTxt(until)}`);
+  }
+  if (cmd === '/revoke') {
+    const m = await find(a1);
+    if (!m) return say(chat, 'Member not found.');
+    await setMember(m.tg_id, { access_until: new Date().toISOString() });
+    return say(chat, `⛔ Access removed: ${who(m)}`);
+  }
+  if (cmd === '/members') {
+    const all = (await rest('members?select=*&order=access_until.desc.nullslast&limit=2000')) || [];
+    const act = all.filter(hasAccess);
+    let t = `👥 <b>Members</b>\nStarted the bot: <b>${all.length}</b>\nWith access now: <b>${act.length}</b>\nBlocked the bot: ${all.filter((m) => m.blocked).length}\n\n`;
+    t += act.slice(0, 30).map((m) => `• ${who(m)} · ${daysLeft(m).toFixed(1)}d`).join('\n') || 'Nobody has access yet.';
+    return say(chat, t);
+  }
+  if (cmd === '/setup') {
+    const r = await tg('setMyCommands', { commands: [
+      { command: 'start', description: 'Home: your access and the free trial' },
+      { command: 'results', description: 'Live results by market and date' },
+      { command: 'status', description: 'Your access and days left' },
+      { command: 'balance', description: 'Set your balance for lot sizes' },
+      { command: 'subscribe', description: 'Subscribe or extend' },
+      { command: 'help', description: 'How it works' },
+    ] });
+    return say(chat, `Menu updated: ${r.ok}\nAdmin: /members · /grant id days · /revoke id`);
+  }
+  return null;
+}
+
 // ---------- entry point ----------
 export async function POST(req) {
   if (!TOKEN) return Response.json({ ok: false, error: 'TELEGRAM_BOT_TOKEN missing' }, { status: 503 });
@@ -157,16 +255,55 @@ export async function POST(req) {
   try {
     if (u.message) {
       const chat = u.message.chat.id;
-      const txt = String(u.message.text || '').trim().toLowerCase();
-      if (!dbReady()) { await tg('sendMessage', { chat_id: chat, text: 'Results are not connected yet.' }); return Response.json({ ok: true }); }
-      if (/^\/(start|results|menu)/.test(txt) || txt === 'results') {
-        await tg('sendMessage', { chat_id: chat, parse_mode: 'HTML', text: '📊 <b>T2R Lab results</b>\nPick a market group:', reply_markup: { inline_keyboard: groupKeyboard('today', 'a') } });
-      } else if (/^\/today/.test(txt)) {
-        const c = await resultsCard('all', 'today', 'a');
-        await tg('sendMessage', { chat_id: chat, parse_mode: 'HTML', text: c.text, disable_web_page_preview: true, reply_markup: { inline_keyboard: c.kb } });
-      } else if (/^\/(boom|crash|bc)/.test(txt)) {
-        const c = await resultsCard('bc', 'today', 'a');
-        await tg('sendMessage', { chat_id: chat, parse_mode: 'HTML', text: c.text, disable_web_page_preview: true, reply_markup: { inline_keyboard: c.kb } });
+      const raw = String(u.message.text || '').trim();
+      const txt = raw.toLowerCase();
+      if (!dbReady()) { await tg('sendMessage', { chat_id: chat, text: 'The service is not connected yet.' }); return Response.json({ ok: true }); }
+      const sendCard = async (g, p) => { const c = await resultsCard(g, p, 'a'); await tg('sendMessage', { chat_id: chat, parse_mode: 'HTML', text: c.text, disable_web_page_preview: true, reply_markup: { inline_keyboard: c.kb } }); };
+      if (/^\/(results|menu)/.test(txt) || txt === 'results') {
+        await tg('sendMessage', { chat_id: chat, parse_mode: 'HTML', text: '📊 <b>Live results</b>\nPick a market group:', reply_markup: { inline_keyboard: groupKeyboard('today', 'a') } });
+        return Response.json({ ok: true });
+      }
+      if (/^\/today/.test(txt)) { await sendCard('all', 'today'); return Response.json({ ok: true }); }
+      if (/^\/(boom|crash|bc)/.test(txt)) { await sendCard('bc', 'today'); return Response.json({ ok: true }); }
+      if (u.message.chat.type !== 'private' || !u.message.from) return Response.json({ ok: true });
+
+      // members (needs upgrade_v28.sql; before that, /start falls back to the results menu)
+      let m;
+      try { m = await touch(u.message.from); } catch {
+        await tg('sendMessage', { chat_id: chat, parse_mode: 'HTML', text: '📊 <b>Live results</b>\nPick a market group:', reply_markup: { inline_keyboard: groupKeyboard('today', 'a') } });
+        return Response.json({ ok: true });
+      }
+      const isNew = m.created_at && Date.now() - new Date(m.created_at).getTime() < 20000;
+      if (String(chat) === ADMIN && /^\/(grant|revoke|members|setup)\b/.test(txt)) { await adminCmd(chat, raw); return Response.json({ ok: true }); }
+
+      const num = /^(?:\/balance\s*)?\$?\s*([\d,]+(?:\.\d+)?)\s*(?:usd|\$)?$/i.exec(raw);
+      const mail = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.exec(raw);
+      if (/^\/start/.test(txt)) {
+        const w = welcome(m);
+        await say(chat, w.text, w.kb);
+        if (isNew) await toAdmin(`👋 New in the bot: ${who(m)}`);
+      } else if (/^\/status/.test(txt)) {
+        const w = welcome(m);
+        await say(chat, w.text, w.kb);
+      } else if (/^\/(subscribe|renew|pay)/.test(txt)) {
+        await subscribe(chat, m);
+      } else if (/^\/help/.test(txt)) {
+        await say(chat, HOW, [[resultsBtn]]);
+      } else if (/^\/balance\s*$/.test(txt)) {
+        await say(chat, '📦 Send your account balance as a number, e.g. <code>500</code>.');
+      } else if (num) {
+        const bal = Number(num[1].replace(/,/g, ''));
+        if (bal > 0 && bal <= 100000000) {
+          await setMember(m.tg_id, { balance: bal });
+          await say(chat, `📦 Saved. Every card now shows your lot size for a balance of <b>${bal}</b>.\nChange it any time: just send a new number.`);
+        }
+      } else if (mail) {
+        await setMember(m.tg_id, { email: raw });
+        await say(chat, '📧 Email saved.');
+        await subscribe(chat, { ...m, email: raw });
+      } else {
+        const w = welcome(m);
+        await say(chat, w.text, w.kb);
       }
       return Response.json({ ok: true });
     }
@@ -177,10 +314,22 @@ export async function POST(req) {
       await tg('answerCallbackQuery', { callback_query_id: q.id });
       if (k === 'noop') return Response.json({ ok: true });
       const edit = (text, kb) => tg('editMessageText', { chat_id: chat, message_id: mid, parse_mode: 'HTML', text, disable_web_page_preview: true, reply_markup: { inline_keyboard: kb } });
-      if (k === 'r') { const c = await resultsCard(p[0], p[1], p[2]); await edit(c.text, c.kb); }
+      if (k === 'r') {
+        const c = await resultsCard(p[0], p[1], p[2]);
+        // results opened from a member message: send a new card instead of replacing the welcome
+        if (q.message.text && !q.message.text.startsWith('📊')) await tg('sendMessage', { chat_id: chat, parse_mode: 'HTML', text: c.text, disable_web_page_preview: true, reply_markup: { inline_keyboard: c.kb } });
+        else await edit(c.text, c.kb);
+      }
       if (k === 'g') await edit('📊 <b>Pick a market group</b>', groupKeyboard(p[0], p[1]));
       if (k === 'p') await edit(`🗓 <b>Pick a period</b> · ${esc(GNAME[p[0]])}`, periodKeyboard(p[0], p[1]));
       if (k === 'c') await edit(`📅 <b>Pick a day</b> · ${esc(GNAME[p[0]])}`, calendar(p[0], p[1], p[2]));
+      if (['trial', 'sub', 'how', 'bal'].includes(k) && q.from) {
+        const m = await touch(q.from);
+        if (k === 'trial') await startTrial(chat, m);
+        if (k === 'sub') await subscribe(chat, m);
+        if (k === 'how') await say(chat, HOW, [[resultsBtn]]);
+        if (k === 'bal') await say(chat, '📦 Send your account balance as a number, e.g. <code>500</code>.');
+      }
       return Response.json({ ok: true });
     }
   } catch (e) {
@@ -190,5 +339,7 @@ export async function POST(req) {
 }
 
 export async function GET() {
-  return Response.json({ ok: true, bot: !!TOKEN, secret: !!SECRET, db: dbReady() });
+  let members = false;
+  try { await rest('members?select=tg_id&limit=1'); members = true; } catch {}
+  return Response.json({ ok: true, bot: !!TOKEN, secret: !!SECRET, db: dbReady(), members, payments: payOn(), cron: !!process.env.CRON_SECRET });
 }
