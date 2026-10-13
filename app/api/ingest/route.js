@@ -16,6 +16,7 @@ const num = (v) => (v === undefined || v === null || v === '' ? undefined : Numb
 function rowFor(e) {
   const row = { id: String(e.id) };
   for (const f of FIELDS) if (e[f] !== undefined && e[f] !== null && e[f] !== '') row[f] = NUMS.includes(f) ? num(e[f]) : String(e[f]);
+  if (e.tg !== undefined) row.tg = e.tg === true || e.tg === 'true';
   const at = num(e.at);
   if (num(e.t_signal) !== undefined) row.t_signal = num(e.t_signal);
   if (num(e.t_fill) !== undefined) row.t_fill = num(e.t_fill);
@@ -69,7 +70,7 @@ export async function POST(req) {
     // the database wants rows with the same columns in one call
     const groups = new Map();
     for (const r of merged.values()) { const k = Object.keys(r).sort().join(','); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); }
-    const NEW = ['risk_per_lot', 'vol_min', 'vol_step', 'lots', 'ccy'];
+    const NEW = ['risk_per_lot', 'vol_min', 'vol_step', 'lots', 'ccy', 'tg'];
     for (const rows of groups.values()) {
       try {
         await rest('signals?on_conflict=id', { method: 'POST', body: rows, prefer: 'resolution=merge-duplicates,return=minimal' });
