@@ -2,6 +2,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { toTrades, dayKey, ratioOf } from '@/lib/util';
+import { familyOf } from '@/lib/constants';
 import { sb, fetchAll, rowToTrade } from '@/lib/supabase-client';
 
 const Ctx = createContext(null);
@@ -41,8 +42,8 @@ export default function DataProvider({ children }) {
     if (!raw) return null;
     const [lab, tr] = raw;
     const MK = {};
-    lab.markets.forEach((m) => { MK[m[0]] = { name: m[0], fam: m[1], bars: m[2], from: m[3], to: m[4], status: m[5] }; });
-    const famOf = (a) => (MK[a] ? MK[a].fam : /^[A-Z]{6}$/.test(a) ? (/^X(AU|AG|PT|PD)/.test(a) ? 'Metals' : 'Forex') : 'Synthetics');
+    lab.markets.forEach((m) => { MK[m[0]] = { name: m[0], fam: familyOf(m[0]), bars: m[2], from: m[3], to: m[4], status: m[5] }; });
+    const famOf = familyOf;
     const ROWS = lab.rows.map((r, i) => ({ i, a: r[0], s: r[1], v: r[2], sd: r[3], c: r[4], st: r[5], best: r[6], pass: r[7], strong: r[8], fam: famOf(r[0]) }));
     const WATCH = lab.watch.map((w, i) => ({ i, a: w[0], s: w[1], v: w[2], sd: w[3], c: w[4], si: w[5], lv: w[6], st: w[7], b1: w[8], pw: w[9], z: w[10], house: w[11], fam: famOf(w[0]) }));
     const WSET = {};

@@ -3,13 +3,14 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { useData } from './DataProvider';
-import { IcHome, IcJournal, IcExplore, IcStrat, IcStar, IcBook, IcSearch, IcRadio } from './Icons';
+import { IcHome, IcJournal, IcExplore, IcStrat, IcStar, IcBook, IcSearch, IcRadio, IcFlask } from './Icons';
 
 export const PAGES = [
   { href: '/', label: 'Overview', Ic: IcHome },
   { href: '/desk', label: 'Signal Desk', short: 'Desk', Ic: IcRadio, live: true },
+  { href: '/spikes', label: 'Spike Study', short: 'Spikes', Ic: IcFlask },
   { href: '/journal', label: 'Journal', short: 'Trades', Ic: IcJournal },
-  { href: '/watchlist', label: 'Watchlist', short: 'Watch', Ic: IcStar },
+  { href: '/watchlist', label: 'Watchlist', short: 'Watch', Ic: IcStar, noTab: true },
   { href: '/strategies', label: 'Strategies', short: 'Strategy', Ic: IcStrat },
   { href: '/explorer', label: 'Backtest', short: 'Backtest', Ic: IcExplore },
   { href: '/method', label: 'Method', short: 'Method', Ic: IcBook, noTab: true },

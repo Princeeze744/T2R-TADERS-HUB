@@ -7,7 +7,8 @@ import DateRange from './DateRange';
 import TradeDrawer from './TradeDrawer';
 import { EquityChart } from './Charts';
 import { Select, Seg, Toggle, Ring, Reveal, ease } from './ui';
-import { FAMS, STRATS } from '@/lib/constants';
+import { FAMS, STRATS, FAM_SHORT, spikeGroupOf } from '@/lib/constants';
+const SPIKE_GROUPS = ['Boom & Crash', 'DEX', 'Vol over', 'Trek', 'Crash Boom Flip'];
 import { summarise, capPerDay, groupBy, f2, f1, cl, money, pc, nf, dayKey, dayLabel, hhmm, fmtPrice, weekStart, addDays, shortDate } from '@/lib/util';
 
 const STEP = 120;
@@ -25,7 +26,7 @@ export default function Journal() {
 
   const q = {
     from: sp.get('from') || minK, to: sp.get('to') || maxK,
-    fam: sp.get('fam') || '', mk: sp.get('mk') || '', st: sp.get('st') || '',
+    fam: sp.get('fam') || '', sg: sp.get('sg') || '', mk: sp.get('mk') || '', st: sp.get('st') || '',
     res: sp.get('res') || 'all', dir: sp.get('dir') || '', src: sp.get('src') || '',
     cap: sp.get('cap') === '1', sort: sp.get('sort') || 'new', t: sp.get('t') || '',
   };
@@ -39,10 +40,10 @@ export default function Journal() {
 
   // everything except the date range (for the calendar heat)
   const base = useMemo(() => {
-    let L = all.filter((t) => (!q.fam || t.fam === q.fam) && (!q.mk || t.a === q.mk) && (!q.st || t.s === q.st) && (!q.dir || t.dir === q.dir) && (!q.src || t.src === q.src));
+    let L = all.filter((t) => (!q.fam || t.fam === q.fam) && (!q.sg || spikeGroupOf(t.a) === q.sg) && (!q.mk || t.a === q.mk) && (!q.st || t.s === q.st) && (!q.dir || t.dir === q.dir) && (!q.src || t.src === q.src));
     if (q.cap) L = capPerDay(L, 2);
     return L;
-  }, [all, q.fam, q.mk, q.st, q.dir, q.src, q.cap]);
+  }, [all, q.fam, q.sg, q.mk, q.st, q.dir, q.src, q.cap]);
   const dayStats = useMemo(() => {
     const m = new Map();
     base.forEach((t) => { const s = m.get(t.day) || { n: 0, R: 0 }; s.n++; if (t.res !== 'open') s.R += t.R; m.set(t.day, s); });
@@ -85,7 +86,7 @@ export default function Journal() {
   }, [all, q.fam, data]);
 
   const trade = q.t ? data.TBYID[q.t] : null;
-  const anyFilter = q.fam || q.mk || q.st || q.dir || q.src || q.cap || q.res !== 'all';
+  const anyFilter = q.fam || q.sg || q.mk || q.st || q.dir || q.src || q.cap || q.res !== 'all';
   const maxDay = Math.max(1, ...days.map((d) => Math.abs(d[1].R)));
   const maxMk = Math.max(1, ...byMarket.map((m) => Math.abs(m.R)));
   const visible = list.slice(0, shown);
@@ -100,6 +101,12 @@ export default function Journal() {
         <Reveal delay={0.1}><p className="lead">Pick any dates and see every trade the followed setups took: where it entered, where the stop and target sat, and how it ended. Click a trade to watch it on the chart.</p></Reveal>
       </div>
 
+      <div className="shelves">
+        <Seg id="jfam" value={q.fam} onChange={(v) => set({ fam: v, sg: '', mk: v && q.mk && data.famOf(q.mk) !== v ? '' : q.mk })} options={[{ value: '', label: 'All markets' }, ...FAMS.map((f) => ({ value: f, label: FAM_SHORT[f] }))]} />
+        {q.fam === 'Catching Spikes' && (
+          <Seg id="jsg" value={q.sg} onChange={(v) => set({ sg: v, mk: '' })} options={[{ value: '', label: 'All spikes' }, ...SPIKE_GROUPS.map((g) => ({ value: g, label: g }))]} />
+        )}
+      </div>
       <div className="sticky-bar">
         <div className="toolbar">
           <DateRange from={q.from} to={q.to} min={minK} max={maxK} todayKey={todayKey} dayStats={dayStats} onChange={(from, to) => set({ from, to })} />
@@ -109,13 +116,13 @@ export default function Journal() {
           <Select label="Order" value={q.dir} onChange={(v) => set({ dir: v })} options={[{ value: 'buy', label: 'Buys' }, { value: 'sell', label: 'Sells' }]} allLabel="Buys and sells" />
           <Select label="Source" value={q.src} onChange={(v) => set({ src: v })} options={[{ value: 'r', label: 'Replay of past days' }, { value: 'l', label: 'Live demo' }]} allLabel="Replay + live demo" right />
           <Toggle checked={q.cap} onChange={(v) => set({ cap: v })}>Telegram plan: max 2 a market a day</Toggle>
-          {anyFilter && <button type="button" className="chip" onClick={() => set({ fam: '', mk: '', st: '', dir: '', src: '', cap: false, res: 'all' })}>Clear filters</button>}
+          {anyFilter && <button type="button" className="chip" onClick={() => set({ fam: '', sg: '', mk: '', st: '', dir: '', src: '', cap: false, res: 'all' })}>Clear filters</button>}
         </div>
       </div>
 
       <div className="between" style={{ margin: '18px 0 14px' }}>
         <h2 className="serif" style={{ fontSize: 28 }}>{range}</h2>
-        <span className="dim" style={{ fontSize: 13 }}>{q.mk || q.fam || 'All markets'}{q.st ? ' · ' + q.st : ''}</span>
+        <span className="dim" style={{ fontSize: 13 }}>{q.mk || q.sg || q.fam || 'All markets'}{q.st ? ' · ' + q.st : ''}</span>
       </div>
 
       <div className="kpis">

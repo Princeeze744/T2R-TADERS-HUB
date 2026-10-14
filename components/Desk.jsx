@@ -5,7 +5,7 @@ import { useData } from './DataProvider';
 import TradeDrawer from './TradeDrawer';
 import { Reveal, Seg, Toggle, ease } from './ui';
 import { IcLeft, IcRight } from './Icons';
-import { FAMS } from '@/lib/constants';
+import { FAMS, FAM_SHORT } from '@/lib/constants';
 import { sb, rowToTrade } from '@/lib/supabase-client';
 import { f1, f2, cl, pc, nf, money, fmtPrice, hhmm, dayKey, keyToTs, addDays, dayLabel, ratioOf } from '@/lib/util';
 
@@ -145,7 +145,7 @@ export default function Desk() {
   }, [preview, pRows, rows, running, day, todayKey]);
   const goTo = (id) => { const el = document.getElementById('sig-' + id); if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); markFresh(id); } };
   const runAll = preview ? pRows.filter((r) => r.status === 'active') : running;
-  const match = (r) => (fam === 'All' || (r.family || data.famOf(r.market)) === fam) && (!q || (r.market + ' ' + r.strategy).toLowerCase().includes(q.toLowerCase()));
+  const match = (r) => (fam === 'All' || data.famOf(r.market) === fam) && (!q || (r.market + ' ' + r.strategy).toLowerCase().includes(q.toLowerCase()));
   const feed = all.filter(match).sort((a, b) => (b.t_signal || b.t_fill || 0) - (a.t_signal || a.t_fill || 0));
   const act = runAll.filter((r) => r.status === 'active' && match(r));
   const wait = runAll.filter((r) => r.status === 'pending' && match(r));
@@ -209,7 +209,7 @@ export default function Desk() {
               <button type="button" className="iconbtn" disabled={day >= todayKey} onClick={() => setDay(addDays(day, 1))} aria-label="Next day"><IcRight s={16} /></button>
             </div>
           )}
-          <Seg id="dfam" value={fam} onChange={setFam} options={['All', ...FAMS].map((f) => ({ value: f, label: f === 'Boom and Crash' ? 'Boom/Crash' : f }))} />
+          <Seg id="dfam" value={fam} onChange={setFam} options={['All', ...FAMS].map((f) => ({ value: f, label: FAM_SHORT[f] || f }))} />
           <input className="field-btn" style={{ width: 180, outline: 0 }} placeholder="Search a market" value={q} onChange={(e) => setQ(e.target.value)} />
           <label className="risk" title="Your account size. Every card shows the lot size for 0.5%, 1% and 2% of it.">
             <span className="lbl">Your balance</span>$
@@ -239,7 +239,7 @@ export default function Desk() {
           <div className="feed">
             <AnimatePresence initial={false}>
               {feed.slice(0, 300).map((r) => (
-                <SignalCard key={r.id} r={r} bal={bal} today={day === todayKey} fam={r.family || data.famOf(r.market)} fresh={fresh[r.id] && Date.now() - fresh[r.id] < 25000} risk={risk}
+                <SignalCard key={r.id} r={r} bal={bal} today={day === todayKey} fam={data.famOf(r.market)} fresh={fresh[r.id] && Date.now() - fresh[r.id] < 25000} risk={risk}
                   onOpen={r.status === 'active' || r.status === 'won' || r.status === 'lost' ? () => setOpen('s' + r.id) : null} />
               ))}
             </AnimatePresence>

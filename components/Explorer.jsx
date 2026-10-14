@@ -4,8 +4,8 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useData, wkey } from './DataProvider';
 import StoryDrawer from './StoryDrawer';
-import { Reveal, Select, Toggle } from './ui';
-import { FAMS, STRATS, INFO, SM, LV, SMN, LVN } from '@/lib/constants';
+import { Reveal, Select, Toggle, Seg } from './ui';
+import { FAMS, FAM_SHORT, STRATS, INFO, SM, LV, SMN, LVN } from '@/lib/constants';
 import { f2, f1, cl, pc, nf, summarise, rrTxt } from '@/lib/util';
 
 const minU = (st) => Math.min(st[1][2], st[2][2]);
@@ -67,6 +67,9 @@ export default function Explorer() {
         <Reveal><span className="eyebrow">Backtest explorer</span></Reveal>
         <Reveal delay={0.05}><h1 className="h-sec">Every strategy on <em>every market.</em></h1></Reveal>
         <Reveal delay={0.1}><p className="lead">{nf(data.ROWS.length)} combinations. Stage cells show the average result per trade with the standard setup (risk 1 to make 2), the win rate and the number of trades. Stages 2 and 3 are history the strategy never saw.</p></Reveal>
+      </div>
+      <div className="shelves">
+        <Seg id="xfam" value={fam} onChange={(v) => { setFam(v); if (v && mk && data.MK[mk]?.fam !== v) setMk(''); }} options={[{ value: '', label: 'All markets' }, ...FAMS.map((f) => ({ value: f, label: FAM_SHORT[f] }))]} />
       </div>
       <div className="sticky-bar">
         <div className="toolbar">
