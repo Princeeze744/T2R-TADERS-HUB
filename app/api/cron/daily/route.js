@@ -1,6 +1,6 @@
 // Runs once a day (vercel.json): the daily report to members, and reminders before access ends.
 import { rest } from '@/lib/supabase-server';
-import { tg, esc, Rtxt, btn, ADMIN, PRODUCT, premiumOk, activeMembers, hasAccess, dateTxt, payOn, priceTxt } from '@/lib/bot';
+import { groupOf, GNAME, tg, esc, Rtxt, btn, ADMIN, PRODUCT, premiumOk, activeMembers, hasAccess, dateTxt, payOn, priceTxt } from '@/lib/bot';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -13,7 +13,7 @@ async function report() {
   const sent = (await rest(`broadcasts?select=signal_id&at=gte.${new Date(a * 1000).toISOString()}&limit=5000`)) || [];
   const ids = new Set(sent.map((r) => r.signal_id));
   const rows = ((await rest(`signals?select=id,market,dir,status,r_full,r_t2r,hit_tp1,t_signal&t_signal=gte.${a}&t_signal=lt.${t0}&limit=5000`)) || [])
-    .filter((r) => ids.has(r.id) && premiumOk(r.market, r.dir));
+    .filter((r) => ids.has(r.id) && premiumOk(r.market));
   const closed = rows.filter((r) => r.status === 'won' || r.status === 'lost');
   const won = closed.filter((r) => r.status === 'won').length;
   const sum = (k) => closed.reduce((x, r) => x + (Number(r[k]) || 0), 0);
@@ -24,6 +24,10 @@ async function report() {
   t += `💰 T2R rule (half off at +1R) <b>${Rtxt(sum('r_t2r'))}</b>   ·   Full target <b>${Rtxt(sum('r_full'))}</b>\n`;
   const open = rows.length - closed.length - rows.filter((r) => r.status === 'cancelled').length;
   if (open > 0) t += `⚡ Still running or waiting: ${open}\n`;
+  const gs = {};
+  closed.forEach((r) => { const g = groupOf(r.market); gs[g] = gs[g] || { n: 0, w: 0, R: 0 }; gs[g].n++; if (r.status === 'won') gs[g].w++; gs[g].R += Number(r.r_t2r) || 0; });
+  const gl = Object.entries(gs).sort((x, y) => y[1].R - x[1].R);
+  if (gl.length) t += `\n<b>By market (T2R rule)</b>\n` + gl.map(([g, v]) => `• ${esc(GNAME[g])}  ${v.w}/${v.n} won · ${Rtxt(v.R)}`).join('\n') + '\n';
   const top = closed.filter((r) => r.status === 'won').sort((x, y) => y.r_full - x.r_full).slice(0, 3);
   if (top.length) t += `\n<b>Best</b>\n` + top.map((r) => `• ${esc(r.market)} ${r.dir === 'buy' ? 'BUY' : 'SELL'}  ${Rtxt(r.r_full)}`).join('\n');
   t += `\n\nAt 1% risk, 1R = 1% of your account. Every trade is on the public record: /results`;

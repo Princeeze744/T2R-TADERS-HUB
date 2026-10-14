@@ -3,7 +3,7 @@
 // Members: /start -> free trial -> signals by direct message -> subscribe (Paystack). Admin: /grant /revoke /members /setup
 // Buttons: market group -> period (today, yesterday, week, month, calendar) -> results card. Telegram-only or all signals.
 import { dbReady, rest } from '@/lib/supabase-server';
-import { ADMIN, PRODUCT, TRIAL_DAYS, PLAN_DAYS, payOn, priceTxt, payLink, member, touch, hasAccess, daysLeft, setMember, extend, dateTxt, ubtn } from '@/lib/bot';
+import { GROUPS, GNAME, groupOf, ADMIN, PRODUCT, TRIAL_DAYS, PLAN_DAYS, payOn, priceTxt, payLink, member, touch, hasAccess, daysLeft, setMember, extend, dateTxt, ubtn } from '@/lib/bot';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -11,23 +11,6 @@ export const maxDuration = 30;
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const SECRET = process.env.TELEGRAM_WEBHOOK_SECRET;
 const SITE = process.env.SITE_URL || 'https://t2r-traders-hub.vercel.app';
-
-// ---------- market groups ----------
-const GROUPS = [
-  ['all', 'All markets'], ['bc', 'Boom & Crash'], ['dex', 'DEX'], ['vo', 'Vol over'],
-  ['vol', 'Volatility'], ['rb', 'Range Break'], ['syn', 'Other synthetics'], ['fx', 'Forex'], ['met', 'Metals'],
-];
-const GNAME = Object.fromEntries(GROUPS);
-function groupOf(m) {
-  if (/^(Boom|Crash) \d/.test(m)) return 'bc';
-  if (/DEX/.test(m)) return 'dex';
-  if (/Vol over/.test(m)) return 'vo';
-  if (/Range Break/.test(m)) return 'rb';
-  if (/^X(AU|AG|PT|PD)/.test(m)) return 'met';
-  if (/^[A-Z]{6}$/.test(m)) return 'fx';
-  if (/Volatility|High Frequency/.test(m)) return 'vol';
-  return 'syn';
-}
 
 // ---------- time (server time = GMT) ----------
 const DAY = 86400;
@@ -47,7 +30,9 @@ function period(code) {
     case 'week': return [t - dow * DAY, t + DAY, 'This week'];
     case 'lweek': return [t - (dow + 7) * DAY, t - dow * DAY, 'Last week'];
     case '7d': return [t - 6 * DAY, t + DAY, 'Last 7 days'];
+    case '30d': return [t - 29 * DAY, t + DAY, 'Last 30 days'];
     case 'month': return [m0, t + DAY, 'This month'];
+    case 'lmonth': { const d = new Date(t * 1000); return [Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 1, 1) / 1000, m0, 'Last month']; }
     case 'all': return [0, t + DAY, 'All time'];
     default:
       if (/^d\d{8}$/.test(code)) { const a = fromYmd(code.slice(1)); return [a, a + DAY, dlabel(a) + ' ' + code.slice(1, 5)]; }
@@ -64,89 +49,122 @@ const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 const R = (x) => (x >= 0 ? '+' : '−') + Math.abs(x).toFixed(1) + 'R';
 const btn = (text, data) => ({ text, callback_data: data });
 
-// state carried in every button: g = group, p = period, s = source (t = Telegram signals, a = all)
-const enc = (g, p, s) => `r|${g}|${p}|${s}`;
+// state carried in every button: sc = scope (a market group key, or @Market for one asset),
+// d = direction (a = buys + sells, b = buys only, s = sells only), p = period
+const DIRS = { a: 'Buys + sells', b: 'Buys only', s: 'Sells only' };
+const dOk = (x) => (DIRS[x] ? x : 'a');
+const enc = (sc, d, p) => `r|${sc}|${d}|${p}`;
+const fits = (s) => Buffer.byteLength(s) <= 64;
+const scName = (sc) => (sc.startsWith('@') ? sc.slice(1) : GNAME[sc] || 'All markets');
+const scGroup = (sc) => (sc.startsWith('@') ? groupOf(sc.slice(1)) : sc);
+const calBtn = (sc, d) => btn('📅 Pick a day', `c|${sc}|${d}|${ymd(today0()).slice(0, 6)}`);
 
-function groupKeyboard(p, s) {
+// mode r: results for the group · mode a: pick an asset inside the group
+function groupKeyboard(d, p, mode = 'r') {
+  const list = GROUPS.filter(([k]) => mode === 'r' || k !== 'all');
   const rows = [];
-  for (let i = 0; i < GROUPS.length; i += 3) rows.push(GROUPS.slice(i, i + 3).map(([k, n]) => btn(n, enc(k, p, s))));
+  for (let i = 0; i < list.length; i += 3) rows.push(list.slice(i, i + 3).map(([k, n]) => btn(n, mode === 'r' ? enc(k, d, p) : `a|${k}|${d}|${p}`)));
+  rows.push(mode === 'r' ? [btn('🔎 Pick one asset instead', `ag|${d}|${p}`)] : [btn('‹ Back to market groups', `g|${d}|${p}`)]);
   return rows;
 }
-function periodKeyboard(g, s) {
+async function assetKeyboard(g, d, p) {
+  const since = today0() - 60 * DAY;
+  const seen = new Set();
+  for (let off = 0; off < 20000; off += 1000) {
+    const r = (await rest(`signals?select=market&t_signal=gte.${since}&limit=1000&offset=${off}`)) || [];
+    r.forEach((x) => { if (groupOf(x.market) === g) seen.add(x.market); });
+    if (r.length < 1000) break;
+  }
+  const list = [...seen].sort((x, y) => x.localeCompare(y, 'en', { numeric: true })).filter((m) => fits(enc('@' + m, d, 'd20261231')));
+  const rows = [];
+  for (let i = 0; i < list.length; i += 2) rows.push(list.slice(i, i + 2).map((m) => btn(m, enc('@' + m, d, p))));
+  if (!rows.length) rows.push([btn('No signals in this group yet', 'noop')]);
+  rows.push([btn('‹ Other groups', `ag|${d}|${p}`), btn(`📊 All of ${GNAME[g]}`, enc(g, d, p))]);
+  return rows;
+}
+function periodKeyboard(sc, d) {
   return [
-    [btn('Today', enc(g, 'today', s)), btn('Yesterday', enc(g, 'yday', s)), btn('Last 7 days', enc(g, '7d', s))],
-    [btn('This week', enc(g, 'week', s)), btn('Last week', enc(g, 'lweek', s)), btn('This month', enc(g, 'month', s))],
-    [btn('📅 Pick a day', `c|${g}|${s}|${ymd(today0()).slice(0, 6)}`), btn('All time', enc(g, 'all', s))],
+    [btn('Today', enc(sc, d, 'today')), btn('Yesterday', enc(sc, d, 'yday')), btn('Last 7 days', enc(sc, d, '7d'))],
+    [btn('This week', enc(sc, d, 'week')), btn('Last week', enc(sc, d, 'lweek')), btn('Last 30 days', enc(sc, d, '30d'))],
+    [btn('This month', enc(sc, d, 'month')), btn('Last month', enc(sc, d, 'lmonth')), btn('All time', enc(sc, d, 'all'))],
+    [calBtn(sc, d)],
   ];
 }
-function calendar(g, s, ym) {
+function calendar(sc, d, ym) {
   const y = +ym.slice(0, 4), m = +ym.slice(4, 6) - 1;
   const first = Date.UTC(y, m, 1) / 1000;
   const days = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
   const lead = (new Date(first * 1000).getUTCDay() + 6) % 7;
-  const rows = [[btn(`${MON[m]} ${y}`, 'noop')], ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map((d) => btn(d, 'noop'))];
+  const rows = [[btn(`${MON[m]} ${y}`, 'noop')], ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map((x) => btn(x, 'noop'))];
   let row = Array.from({ length: lead }, () => btn(' ', 'noop'));
   const t0 = today0();
-  for (let d = 1; d <= days; d++) {
-    const t = first + (d - 1) * DAY;
-    row.push(t > t0 ? btn('·', 'noop') : btn(String(d), enc(g, 'd' + ymd(t), s)));
+  for (let k = 1; k <= days; k++) {
+    const t = first + (k - 1) * DAY;
+    row.push(t > t0 ? btn('·', 'noop') : btn(String(k), enc(sc, d, 'd' + ymd(t))));
     if (row.length === 7) { rows.push(row); row = []; }
   }
   if (row.length) { while (row.length < 7) row.push(btn(' ', 'noop')); rows.push(row); }
   const prev = new Date(Date.UTC(y, m - 1, 1)).toISOString().slice(0, 7).replace('-', '');
   const next = new Date(Date.UTC(y, m + 1, 1)).toISOString().slice(0, 7).replace('-', '');
-  rows.push([btn('‹ Prev', `c|${g}|${s}|${prev}`), btn('Back', enc(g, 'today', s)), btn('Next ›', `c|${g}|${s}|${next}`)]);
+  rows.push([btn('‹ Prev', `c|${sc}|${d}|${prev}`), btn('Back', enc(sc, d, 'today')), btn('Next ›', `c|${sc}|${d}|${next}`)]);
   return rows;
 }
 
 // ---------- the numbers ----------
-async function fetchRows(a, b) {
-  const cols = 'market,status,r_full,r_t2r,r_float,t_signal,tg';
+async function fetchRows(a, b, market) {
   const out = [];
   for (let off = 0; off < 20000; off += 1000) {
-    let q = `signals?select=${cols}&t_signal=gte.${a}&t_signal=lt.${b}&order=t_signal.asc&limit=1000&offset=${off}`;
-    let rows;
-    try { rows = await rest(q); } catch (e) {
-      // database without the tg column yet: read without it
-      q = q.replace(',tg', '');
-      rows = await rest(q);
-    }
+    const q = `signals?select=market,dir,status,r_full,r_t2r,r_float,t_signal&t_signal=gte.${a}&t_signal=lt.${b}` +
+      (market ? `&market=eq.${encodeURIComponent(market)}` : '') + `&order=t_signal.asc&limit=1000&offset=${off}`;
+    const rows = (await rest(q)) || [];
     out.push(...rows);
     if (rows.length < 1000) break;
   }
   return out;
 }
-async function resultsCard(g, p, s) {
-  const [a, b, label] = period(p);
-  let rows = (await fetchRows(a, b)).filter((r) => g === 'all' || groupOf(r.market) === g);
-  const hasTg = rows.some((r) => r.tg === true);
-  if (s === 't') rows = rows.filter((r) => r.tg === true);
-  const closed = rows.filter((r) => r.status === 'won' || r.status === 'lost');
+const tally = (L) => {
+  const closed = L.filter((r) => r.status === 'won' || r.status === 'lost');
   const won = closed.filter((r) => r.status === 'won').length;
-  const sum = (L, k) => L.reduce((x, r) => x + (Number(r[k]) || 0), 0);
+  const sum = (k) => closed.reduce((x, r) => x + (Number(r[k]) || 0), 0);
+  return { n: closed.length, won, lost: closed.length - won, R: sum('r_full'), T: sum('r_t2r') };
+};
+async function resultsCard(sc, d, p) {
+  const [a, b, label] = period(p);
+  const mk = sc.startsWith('@') ? sc.slice(1) : null;
+  const all = (await fetchRows(a, b, mk)).filter((r) => mk || sc === 'all' || groupOf(r.market) === sc);
+  const rows = d === 'b' ? all.filter((r) => r.dir === 'buy') : d === 's' ? all.filter((r) => r.dir === 'sell') : all;
+  const t0 = tally(rows);
   const act = rows.filter((r) => r.status === 'active');
   const wait = rows.filter((r) => r.status === 'pending').length;
-  const by = {};
-  closed.forEach((r) => { const k = r.market; by[k] = by[k] || { n: 0, w: 0, R: 0 }; by[k].n++; if (r.status === 'won') by[k].w++; by[k].R += Number(r.r_full) || 0; });
-  const ranked = Object.entries(by).sort((x, y) => y[1].R - x[1].R);
-  let t = `📊 <b>Results · ${esc(GNAME[g])}</b>\n<i>${esc(label)} · ${s === 't' ? 'Telegram signals' : 'all signals'} · GMT</i>\n\n`;
-  if (!rows.length) {
-    t += (s === 't' && !hasTg) ? 'No Telegram-marked signals in this period yet (marking started with EA v1.58). Try <b>All signals</b>.' : 'No signals in this period.';
-  } else {
-    t += `✅ Won <b>${won}</b>   ❌ Lost <b>${closed.length - won}</b>   ${closed.length ? `🎯 <b>${Math.round((100 * won) / closed.length)}%</b>` : ''}\n`;
-    t += `💰 Result <b>${R(sum(closed, 'r_full'))}</b>   ·   T2R rule <b>${R(sum(closed, 'r_t2r'))}</b>\n`;
-    t += `⚡ Running <b>${act.length}</b>${act.length ? ` · floating ${R(sum(act, 'r_float'))}` : ''}   ·   ⏳ Waiting ${wait}\n`;
-    if (ranked.length) {
-      t += `\n<b>Best</b>\n` + ranked.slice(0, 3).map(([k, v]) => `• ${esc(k)}  ${R(v.R)}  (${v.w}/${v.n})`).join('\n');
+  let t = `📊 <b>Results · ${esc(scName(sc))}</b>\n<i>${esc(label)} · ${DIRS[d]} · GMT</i>\n\n`;
+  if (!rows.length) t += 'No signals in this period.';
+  else {
+    t += `✅ Won <b>${t0.won}</b>   ❌ Lost <b>${t0.lost}</b>${t0.n ? `   🎯 <b>${Math.round((100 * t0.won) / t0.n)}%</b>` : ''}\n`;
+    t += `💰 Full target <b>${R(t0.R)}</b>   ·   T2R rule <b>${R(t0.T)}</b>\n`;
+    t += `⚡ Running <b>${act.length}</b>${act.length ? ` · floating ${R(act.reduce((x, r) => x + (Number(r.r_float) || 0), 0))}` : ''}   ·   ⏳ Waiting ${wait}\n`;
+    if (d === 'a') {
+      const bu = tally(all.filter((r) => r.dir === 'buy')), se = tally(all.filter((r) => r.dir === 'sell'));
+      t += `\n🟢 Buys   ${bu.won}/${bu.n} won · <b>${R(bu.R)}</b>\n🔴 Sells   ${se.won}/${se.n} won · <b>${R(se.R)}</b>\n`;
+    }
+    if (!mk) {
+      const by = {};
+      rows.filter((r) => r.status === 'won' || r.status === 'lost').forEach((r) => {
+        const k = r.market; by[k] = by[k] || { n: 0, w: 0, R: 0 }; by[k].n++; if (r.status === 'won') by[k].w++; by[k].R += Number(r.r_full) || 0;
+      });
+      const ranked = Object.entries(by).sort((x, y) => y[1].R - x[1].R);
+      const best = ranked.slice(0, 3).filter(([, v]) => v.R > 0);
       const worst = ranked.slice(-3).reverse().filter(([, v]) => v.R < 0);
+      if (best.length) t += `\n<b>Best</b>\n` + best.map(([k, v]) => `• ${esc(k)}  ${R(v.R)}  (${v.w}/${v.n})`).join('\n');
       if (worst.length) t += `\n<b>Worst</b>\n` + worst.map(([k, v]) => `• ${esc(k)}  ${R(v.R)}  (${v.w}/${v.n})`).join('\n');
     }
   }
-  t += `\n\n<a href="${SITE}/desk">Open the live desk</a>`;
+  t += `\n\n<i>R = risk. At 1% risk per trade, +1R = +1% on your account.</i>\n<a href="${SITE}/desk">Open the live desk</a>`;
+  const dl = (k, txt) => btn((d === k ? '✓ ' : '') + txt, enc(sc, k, p));
   const kb = [
-    [btn('Today', enc(g, 'today', s)), btn('Yesterday', enc(g, 'yday', s)), btn('7 days', enc(g, '7d', s)), btn('📅', `c|${g}|${s}|${ymd(today0()).slice(0, 6)}`)],
-    [btn(s === 't' ? '✓ Telegram signals' : 'Telegram signals', enc(g, p, 't')), btn(s === 'a' ? '✓ All signals' : 'All signals', enc(g, p, 'a'))],
-    [btn('🔀 Market group', `g|${p}|${s}`), btn('🗓 Period', `p|${g}|${s}`)],
+    [dl('a', '⇅ Both'), dl('b', '🟢 Buys'), dl('s', '🔴 Sells')],
+    [btn('Today', enc(sc, d, 'today')), btn('Yesterday', enc(sc, d, 'yday')), btn('7 days', enc(sc, d, '7d')), btn('30 days', enc(sc, d, '30d'))],
+    [btn('This week', enc(sc, d, 'week')), btn('This month', enc(sc, d, 'month')), btn('📅 Day', `c|${sc}|${d}|${ymd(today0()).slice(0, 6)}`), btn('More…', `p|${sc}|${d}`)],
+    [btn('🔎 Pick an asset', sc === 'all' ? `ag|${d}|${p}` : `a|${scGroup(sc)}|${d}|${p}`), btn('🔀 Market group', `g|${d}|${p}`)],
   ];
   return { text: t, kb };
 }
@@ -156,7 +174,10 @@ const SUPPORT = process.env.SUPPORT_URL || '';
 const say = (chat, text, kb) => tg('sendMessage', { chat_id: chat, parse_mode: 'HTML', text, disable_web_page_preview: true, ...(kb ? { reply_markup: { inline_keyboard: kb } } : {}) });
 const toAdmin = (text) => tg('sendMessage', { chat_id: ADMIN, parse_mode: 'HTML', text, disable_web_page_preview: true }).catch(() => {});
 const who = (m) => `${esc(m.first_name || 'Member')}${m.username ? ' @' + esc(m.username) : ''} (<code>${m.tg_id}</code>)`;
-const resultsBtn = btn('📊 Live results', 'r|bc|7d|a');
+const resultsBtn = btn('📊 Live results', enc('all', 'a', '7d'));
+// the menu that stays at the bottom of the chat, so nobody has to type a /command
+const MENU = { keyboard: [[{ text: '📊 Results' }, { text: '🔎 Results by asset' }], [{ text: '👤 My account' }, { text: 'ℹ️ How it works' }]], resize_keyboard: true, is_persistent: true };
+const showMenu = (chat) => tg('sendMessage', { chat_id: chat, parse_mode: 'HTML', text: '👇 <b>Your menu is at the bottom of this chat.</b> Tap <b>📊 Results</b> any time to check any market, buys or sells, by day, week or month.', reply_markup: MENU });
 
 function welcome(m) {
   const name = m.first_name ? `, ${esc(m.first_name)}` : '';
@@ -168,7 +189,7 @@ function welcome(m) {
       kb: [[btn('📦 Set my balance', 'bal'), resultsBtn], [btn('ℹ️ How it works', 'how'), btn('💳 Extend', 'sub')]],
     };
   }
-  let t = `👋 <b>Welcome${name}, to ${esc(PRODUCT)}</b>\n\nBoom, Crash and DEX signals from a system we test live, in public, every day. They come straight to this chat:\n` +
+  let t = `👋 <b>Welcome${name}, to ${esc(PRODUCT)}</b>\n\nBoom & Crash, DEX, Volatility and every synthetic market, from a system we test live, in public, every day. Buys and sells come straight to this chat:\n` +
     `• entry, stop, take-profit and target on every card\n• your exact lot size for your balance\n• an update under each signal: filled, +1R, target, stop\n\n` +
     `📊 Every result is public, wins and losses. Tap <b>Live results</b> and judge for yourself.\n\n`;
   if (!m.trial_used) {
@@ -180,7 +201,8 @@ function welcome(m) {
 }
 const HOW = `ℹ️ <b>How it works</b>\n\n1️⃣ A card arrives: BUY or SELL, entry, stop, TP1 and target.\n2️⃣ Place it with your lot size. Send your balance once and we work it out for you.\n` +
   `3️⃣ At +1R we tell you: bank half and move the stop to entry. From there the trade can't lose.\n4️⃣ Filled, target, stop or cancel: we reply under the card every time.\n\n` +
-  `We trade <b>with the spike</b>: buys on Boom, sells on Crash. Risk 1% of your account or less per trade.\n\nEvery result is on the public record: /results`;
+  `⚡ On Boom and Crash we teach catching the spike: <b>buys on Boom, sells on Crash</b>. Every card says if it is with or against the spike. Both sides are sent and tracked, so you can see which side pays.\n\n` +
+  `📊 Tap <b>📊 Results</b> at the bottom: any market, buys only or sells only, any day, week or month.\n\nRisk 1% of your account or less per trade.`;
 
 async function startTrial(chat, m) {
   if (hasAccess(m)) { const w = welcome(m); return say(chat, w.text, w.kb); }
@@ -189,6 +211,7 @@ async function startTrial(chat, m) {
   await setMember(m.tg_id, { trial_used: true });
   await say(chat, `🎉 <b>Your free trial is on!</b>\nFor the next ${TRIAL_DAYS} days every spike signal comes straight here. Access until <b>${dateTxt(until)}</b>.\n\n` +
     `📦 One thing first: send your account balance as a number, e.g. <code>500</code>, so each card shows your exact lot size.`, [[btn('ℹ️ How it works', 'how'), resultsBtn]]);
+  await showMenu(chat);
   await toAdmin(`🆕 Trial started: ${who(m)}`);
 }
 
@@ -236,7 +259,8 @@ async function adminCmd(chat, txt) {
   if (cmd === '/setup') {
     const r = await tg('setMyCommands', { commands: [
       { command: 'start', description: 'Home: your access and the free trial' },
-      { command: 'results', description: 'Live results by market and date' },
+      { command: 'results', description: 'Results: any market, buys or sells, any date' },
+      { command: 'asset', description: 'Results for one asset' },
       { command: 'status', description: 'Your access and days left' },
       { command: 'balance', description: 'Set your balance for lot sizes' },
       { command: 'subscribe', description: 'Subscribe or extend' },
@@ -258,19 +282,20 @@ export async function POST(req) {
       const raw = String(u.message.text || '').trim();
       const txt = raw.toLowerCase();
       if (!dbReady()) { await tg('sendMessage', { chat_id: chat, text: 'The service is not connected yet.' }); return Response.json({ ok: true }); }
-      const sendCard = async (g, p) => { const c = await resultsCard(g, p, 'a'); await tg('sendMessage', { chat_id: chat, parse_mode: 'HTML', text: c.text, disable_web_page_preview: true, reply_markup: { inline_keyboard: c.kb } }); };
-      if (/^\/(results|menu)/.test(txt) || txt === 'results') {
-        await tg('sendMessage', { chat_id: chat, parse_mode: 'HTML', text: '📊 <b>Live results</b>\nPick a market group:', reply_markup: { inline_keyboard: groupKeyboard('today', 'a') } });
+      const sendCard = async (sc, d, p) => { const c = await resultsCard(sc, d, p); await tg('sendMessage', { chat_id: chat, parse_mode: 'HTML', text: c.text, disable_web_page_preview: true, reply_markup: { inline_keyboard: c.kb } }); };
+      if (/^\/(results|menu)/.test(txt) || /^📊 results$/.test(txt) || txt === 'results') { await sendCard('all', 'a', 'today'); return Response.json({ ok: true }); }
+      if (/results by asset/.test(txt) || /^\/asset/.test(txt)) {
+        await tg('sendMessage', { chat_id: chat, parse_mode: 'HTML', text: '🔎 <b>Results by asset</b>\nPick the market group first:', reply_markup: { inline_keyboard: groupKeyboard('a', '7d', 'a') } });
         return Response.json({ ok: true });
       }
-      if (/^\/today/.test(txt)) { await sendCard('all', 'today'); return Response.json({ ok: true }); }
-      if (/^\/(boom|crash|bc)/.test(txt)) { await sendCard('bc', 'today'); return Response.json({ ok: true }); }
+      if (/^\/today/.test(txt)) { await sendCard('all', 'a', 'today'); return Response.json({ ok: true }); }
+      if (/^\/(boom|crash|bc)/.test(txt)) { await sendCard('bc', 'a', 'today'); return Response.json({ ok: true }); }
       if (u.message.chat.type !== 'private' || !u.message.from) return Response.json({ ok: true });
 
       // members (needs upgrade_v28.sql; before that, /start falls back to the results menu)
       let m;
       try { m = await touch(u.message.from); } catch {
-        await tg('sendMessage', { chat_id: chat, parse_mode: 'HTML', text: '📊 <b>Live results</b>\nPick a market group:', reply_markup: { inline_keyboard: groupKeyboard('today', 'a') } });
+        await sendCard('all', 'a', 'today');
         return Response.json({ ok: true });
       }
       const isNew = m.created_at && Date.now() - new Date(m.created_at).getTime() < 20000;
@@ -281,13 +306,14 @@ export async function POST(req) {
       if (/^\/start/.test(txt)) {
         const w = welcome(m);
         await say(chat, w.text, w.kb);
+        await showMenu(chat);
         if (isNew) await toAdmin(`👋 New in the bot: ${who(m)}`);
-      } else if (/^\/status/.test(txt)) {
+      } else if (/^\/status/.test(txt) || /my account/.test(txt)) {
         const w = welcome(m);
         await say(chat, w.text, w.kb);
       } else if (/^\/(subscribe|renew|pay)/.test(txt)) {
         await subscribe(chat, m);
-      } else if (/^\/help/.test(txt)) {
+      } else if (/^\/help/.test(txt) || /how it works/.test(txt)) {
         await say(chat, HOW, [[resultsBtn]]);
       } else if (/^\/balance\s*$/.test(txt)) {
         await say(chat, '📦 Send your account balance as a number, e.g. <code>500</code>.');
@@ -315,14 +341,18 @@ export async function POST(req) {
       if (k === 'noop') return Response.json({ ok: true });
       const edit = (text, kb) => tg('editMessageText', { chat_id: chat, message_id: mid, parse_mode: 'HTML', text, disable_web_page_preview: true, reply_markup: { inline_keyboard: kb } });
       if (k === 'r') {
-        const c = await resultsCard(p[0], p[1], p[2]);
+        // buttons from older cards were r|group|period|source
+        const [sc, d, per] = DIRS[p[1]] ? [p[0], p[1], p[2]] : [p[0], 'a', p[1]];
+        const c = await resultsCard(sc, d, per);
         // results opened from a member message: send a new card instead of replacing the welcome
         if (q.message.text && !q.message.text.startsWith('📊')) await tg('sendMessage', { chat_id: chat, parse_mode: 'HTML', text: c.text, disable_web_page_preview: true, reply_markup: { inline_keyboard: c.kb } });
         else await edit(c.text, c.kb);
       }
-      if (k === 'g') await edit('📊 <b>Pick a market group</b>', groupKeyboard(p[0], p[1]));
-      if (k === 'p') await edit(`🗓 <b>Pick a period</b> · ${esc(GNAME[p[0]])}`, periodKeyboard(p[0], p[1]));
-      if (k === 'c') await edit(`📅 <b>Pick a day</b> · ${esc(GNAME[p[0]])}`, calendar(p[0], p[1], p[2]));
+      if (k === 'g') { const [d, per] = DIRS[p[0]] ? [p[0], p[1]] : ['a', p[0]]; await edit('📊 <b>Pick a market group</b>', groupKeyboard(d, per)); }
+      if (k === 'ag') await edit('🔎 <b>Results by asset</b>\nPick the market group first:', groupKeyboard(dOk(p[0]), p[1], 'a'));
+      if (k === 'a') await edit(`🔎 <b>${esc(GNAME[p[0]] || '')}</b> · pick an asset`, await assetKeyboard(p[0], dOk(p[1]), p[2]));
+      if (k === 'p') await edit(`🗓 <b>Pick a period</b> · ${esc(scName(p[0]))}`, periodKeyboard(p[0], dOk(p[1])));
+      if (k === 'c') await edit(`📅 <b>Pick a day</b> · ${esc(scName(p[0]))}`, calendar(p[0], dOk(p[1]), p[2]));
       if (['trial', 'sub', 'how', 'bal'].includes(k) && q.from) {
         const m = await touch(q.from);
         if (k === 'trial') await startTrial(chat, m);
