@@ -71,7 +71,7 @@ export default function Overview() {
             <div>
               <Reveal><span className="eyebrow">Trade2Retire Academy · T2R Lab</span></Reveal>
               <Reveal delay={0.06}><h1 className="h-display" style={{ marginTop: 22 }}>Nine strategies.<br />{Object.keys(data.MK).length} markets.<br /><em>Every trade counted.</em></h1></Reveal>
-              <Reveal delay={0.14}><p className="lead">A computer tested our zone strategies on Deriv synthetics, forex and metals, trade by trade, and only kept what held up on history it had never seen. Pick any day and see every trade on the chart.</p></Reveal>
+              <Reveal delay={0.14}><p className="lead">A computer tested our zone strategies on Deriv synthetics, trade by trade, and only kept what held up on history it had never seen. Pick any day and see every trade on the chart.</p></Reveal>
               <Reveal delay={0.2}>
                 <div className="hero-cta">
                   <Link href="/desk" className="btn primary"><span className="live-dot" />Signal Desk <IcArrow s={16} /></Link>

@@ -7,6 +7,7 @@
 import { dbReady, rest } from '@/lib/supabase-server';
 import { waitUntil } from '@vercel/functions';
 import { fanout } from '@/lib/bot';
+import { familyOf } from '@/lib/constants';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -53,8 +54,10 @@ export async function POST(req) {
   let body;
   try { body = await req.json(); } catch { return Response.json({ ok: false, error: 'bad json' }, { status: 400 }); }
   const events = Array.isArray(body?.events) ? body.events : [body];
-  const all = events.filter((e) => e && e.id && e.kind);
-  if (!all.length) return Response.json({ ok: false, error: 'no events' }, { status: 400 });
+  // forex and metals: the old zone strategies showed no edge, so only the new T2R Trend signals are recorded
+  const fxOld = (e) => e.market && familyOf(e.market) !== '' && ['Forex', 'Metals'].includes(familyOf(e.market)) && !String(e.strategy || '').startsWith('T2R Trend');
+  const all = events.filter((e) => e && e.id && e.kind && !fxOld(e));
+  if (!all.length) return Response.json({ ok: true, saved: 0, note: 'forex and metals zone signals are retired' });
   const accts = all.filter((e) => e.kind === 'account');
   const valid = all.filter((e) => e.kind !== 'account');
   try {

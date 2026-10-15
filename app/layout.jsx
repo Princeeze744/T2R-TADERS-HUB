@@ -8,7 +8,7 @@ import Nav from '@/components/Nav';
 import CommandPalette from '@/components/CommandPalette';
 
 const SITE = 'https://t2r-traders-hub.vercel.app';
-const DESC = 'Every signal, every trade, every result. Nine tested strategies on Deriv synthetics, forex and metals, with a full public record. By Trade2Retire Academy.';
+const DESC = 'Every signal, every trade, every result. Nine tested strategies on Deriv synthetics, led by Boom & Crash, with a full public record. By Trade2Retire Academy.';
 export const metadata = {
   metadataBase: new URL(SITE),
   title: 'T2R Lab · Trade2Retire Academy',
