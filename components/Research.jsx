@@ -27,6 +27,16 @@ const STUDIES = [
     s: [['Gold 20-day momentum, last 4 weeks', '4 trades · +2.7R', 'g'], ['Gold 4H breakout, last 4 weeks', '−4R (choppy gold)', 'r']] },
 
 ];
+
+const PERIODS = [
+  ['⚡ Spike Zones · Boom & Crash, with the spike, 1:3', '20 markets', 'Jan – Oct 2026', 'Jan – Jun: +207R', 'Jul – Oct: +61R', 'yes'],
+  ['🌊 Drift Breakout · 07:00 + 13:30 GMT', '20 markets · 5,507 trades', 'Jan – Oct 2026', 'Jan – Jun: +759R (+0.24R a trade)', 'Jul – Oct: +714R (+0.31R a trade)', 'yes'],
+  ['Spike timing · set clock times', '34 spike markets', 'Jan – Oct 2026', 'Best times in the first half', '44% still worked (random: 49%)', 'no'],
+  ['Forex · zones + 10 strategies', '51 pairs', 'Jul 2024 – Oct 2026', '2024 – 2025: picked the winners', '2026: 0% still winning', 'no'],
+  ['Volatility indices · zones + 10 strategies', '28 markets', 'Jan – Oct 2026', 'Jan – Jun: best setting per market', 'Jul – Oct: 8 of 28 positive, −410R', 'no'],
+  ['🥇 Gold Trend · 4-hour breakout', 'XAUUSD', 'Jul 2024 – Oct 2026', '2024 – 2025: positive', '2026: mixed', 'watch'],
+  ['🧪 Lab tests · all other setups', '100+ markets', 'Live since Oct 2026', 'Picked by the Lab exam', 'Building a live record on the Signal Desk', 'watch'],
+];
 const LESSONS = [
   ['Trade with the spike.', 'The same zones make money with the spike and lose money against it.'],
   ['Spikes do not follow the clock.', 'No hour, minute or weekday held up on unseen months. The session open matters only as a range to break.'],
@@ -56,6 +66,25 @@ export default function Research() {
           </Reveal>
         ))}
       </div>
+      <section className="sec-sm">
+        <Reveal><div className="card pad">
+          <span className="eyebrow">Every test, every period</span>
+          <h2 className="serif" style={{ fontSize: 30, margin: '10px 0 4px' }}>Picked on one period. <em>Proven on the next.</em></h2>
+          <p className="dim" style={{ marginTop: 0, fontSize: 14 }}>Each idea was tuned on the earlier months, then checked on later months it never saw. Only the ones that held on the later months are given to members.</p>
+          <div className="tbl-wrap"><table className="tbl">
+            <thead><tr><th className="l">Test</th><th className="l">Markets</th><th className="l">Data</th><th className="l">Pick period</th><th className="l">Prove period</th><th>Verdict</th></tr></thead>
+            <tbody>{PERIODS.map((r) => (
+              <tr key={r[0]}><td className="l b">{r[0]}</td><td className="l">{r[1]}</td><td className="l mono">{r[2]}</td><td className="l">{r[3]}</td><td className="l">{r[4]}</td><td><span className={'rs-badge ' + V[r[5]].c}>{V[r[5]].t}</span></td></tr>
+            ))}</tbody>
+          </table></div>
+          <div className="hero-cta" style={{ marginTop: 16 }}>
+            <Link href="/journal?set=drift" className="chip">🌊 Drift trades <IcArrow s={14} /></Link>
+            <Link href="/journal?set=zones" className="chip">⚡ Spike Zone trades <IcArrow s={14} /></Link>
+            <Link href="/journal?set=gold" className="chip">🥇 Gold Trend trades <IcArrow s={14} /></Link>
+            <Link href="/journal?set=lab" className="chip">🧪 Lab test trades <IcArrow s={14} /></Link>
+          </div>
+        </div></Reveal>
+      </section>
       <section className="sec-sm">
         <Reveal><div className="card pad">
           <span className="eyebrow">Five lessons from 3 million trades</span>

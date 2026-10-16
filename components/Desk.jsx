@@ -5,7 +5,7 @@ import { useData } from './DataProvider';
 import TradeDrawer from './TradeDrawer';
 import { Reveal, Seg, Toggle, ease } from './ui';
 import { IcLeft, IcRight } from './Icons';
-import { FAMS, FAM_SHORT } from '@/lib/constants';
+import { FAMS, FAM_SHORT, SETUPS, SETUP, setupOf } from '@/lib/constants';
 import { sb, rowToTrade } from '@/lib/supabase-client';
 import { f1, f2, cl, pc, nf, money, fmtPrice, hhmm, dayKey, keyToTs, addDays, dayLabel, ratioOf } from '@/lib/util';
 
@@ -61,6 +61,7 @@ export default function Desk() {
   const [running, setRunning] = useState([]); // pending + active from any day
   const [conn, setConn] = useState(live ? 'connecting' : 'off');
   const [fam, setFam] = useState('All');
+  const [setup, setSetup] = useState('all');
   const [q, setQ] = useState('');
   const [ping, setPing] = useState(false);
   const [fresh, setFresh] = useState({});
@@ -145,7 +146,7 @@ export default function Desk() {
   }, [preview, pRows, rows, running, day, todayKey]);
   const goTo = (id) => { const el = document.getElementById('sig-' + id); if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); markFresh(id); } };
   const runAll = preview ? pRows.filter((r) => r.status === 'active') : running;
-  const match = (r) => (fam === 'All' || data.famOf(r.market) === fam) && (!q || (r.market + ' ' + r.strategy).toLowerCase().includes(q.toLowerCase()));
+  const match = (r) => (setup === 'all' || setupOf(r) === setup) && (fam === 'All' || data.famOf(r.market) === fam) && (!q || (r.market + ' ' + r.strategy).toLowerCase().includes(q.toLowerCase()));
   const feed = all.filter(match).sort((a, b) => (b.t_signal || b.t_fill || 0) - (a.t_signal || a.t_fill || 0));
   const act = runAll.filter((r) => r.status === 'active' && match(r));
   const wait = runAll.filter((r) => r.status === 'pending' && match(r));
@@ -209,6 +210,7 @@ export default function Desk() {
               <button type="button" className="iconbtn" disabled={day >= todayKey} onClick={() => setDay(addDays(day, 1))} aria-label="Next day"><IcRight s={16} /></button>
             </div>
           )}
+          <Seg id="dset" value={setup} onChange={setSetup} options={[{ value: 'all', label: 'All setups' }, ...SETUPS.map((x) => ({ value: x.k, label: x.e + ' ' + x.t }))]} />
           <Seg id="dfam" value={fam} onChange={setFam} options={['All', ...FAMS].map((f) => ({ value: f, label: FAM_SHORT[f] || f }))} />
           <input className="field-btn" style={{ width: 180, outline: 0 }} placeholder="Search a market" value={q} onChange={(e) => setQ(e.target.value)} />
           <label className="risk" title="Your account size. Every card shows the lot size for 0.5%, 1% and 2% of it.">
@@ -306,7 +308,7 @@ function SignalCard({ r, fam, fresh, onOpen, risk, today, bal }) {
       <div className="sig-lv">
         <div><span>Entry</span><b style={{ color: 'var(--gold2)' }}>{fmtPrice(r.entry, ref)}</b></div>
         <div><span>Stop</span><b className="r">{fmtPrice(r.stop, ref)}</b></div>
-        <div><span>TP1 1:1</span><b className="g" style={{ opacity: 0.8 }}>{fmtPrice(r.tp1, ref)}</b></div>
+        {r.tp1 ? <div><span>TP1 1:1</span><b className="g" style={{ opacity: 0.8 }}>{fmtPrice(r.tp1, ref)}</b></div> : null}
         <div><span>Target {r.rr}</span><b className="g">{fmtPrice(r.target, ref)}</b></div>
       </div>
       <div className="sig-foot">
@@ -318,7 +320,7 @@ function SignalCard({ r, fam, fresh, onOpen, risk, today, bal }) {
         </span>
       </div>
       <Lots r={r} bal={bal} />
-      <div className="note" style={{ marginTop: 8 }}>{r.strategy}{r.view ? ' · ' + r.view : ''}{r.stop_class ? ' · ' + r.stop_class : ''}</div>
+      <div className="note" style={{ marginTop: 8 }}><span className={'rs-badge ' + SETUP[setupOf(r)].tone} style={{ marginRight: 8 }}>{SETUP[setupOf(r)].e} {SETUP[setupOf(r)].t}</span>{r.strategy}{r.view ? ' · ' + r.view : ''}{r.stop_class ? ' · ' + r.stop_class : ''}</div>
     </motion.div>
   );
 }
