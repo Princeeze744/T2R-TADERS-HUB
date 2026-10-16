@@ -5,7 +5,7 @@
 //| files, and sends Telegram messages. It places NO trades.         |
 //+------------------------------------------------------------------+
 #property copyright "T2R Lab"
-#property version   "1.62"
+#property version   "1.63"
 #property strict
 #include <Trade\Trade.mqh>
 
@@ -5146,7 +5146,10 @@ void TgSignal(const int k,const string why,const bool now)
    double ratio=WatchRatio(w);
    bool buy=(g_open[k].dir==0);
    string d=buy ? "BUY" : "SELL";
-   string m=(buy ? U(0x1F7E2) : U(0x1F534))+" <b>"+d+(now ? " NOW" : " LIMIT")+"</b>  "+U(0xB7)+"  <b>"+H(sym)+"</b>\n";
+   //--- which kind of signal: the proven top setup (traded on demo) or a lab test (website only)
+   string m=IsBestW(w) ? U(0x2B50)+" <b>T2R TOP SIGNAL</b>  "+U(0xB7)+"  "+U(0x26A1)+" Spike Zone "+U(0xB7)+" model pick  "+U(0xB7)+"  traded on demo\n"
+                       : U(0x1F9EA)+" <i>Lab test  "+U(0xB7)+"  website only, not traded</i>\n";
+   m+=(buy ? U(0x1F7E2) : U(0x1F534))+" <b>"+d+(now ? " NOW" : " LIMIT")+"</b>  "+U(0xB7)+"  <b>"+H(sym)+"</b>\n";
    m+=now ? "<i>Price is in the zone. Enter at market now.</i>\n\n" : "<i>Place this pending order now. It only fills if price comes back to the zone.</i>\n\n";
    m+=U(0x1F4CD)+" Entry    <code>"+Px(sym,g_open[k].entry)+"</code>\n";
    m+=U(0x1F6D1)+" Stop     <code>"+Px(sym,g_open[k].stop)+"</code>   "+U(0x2212)+"1R\n";
