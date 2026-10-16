@@ -12,7 +12,7 @@
 //| On the chart: the opening-range box, the trade lines and a panel.|
 //+------------------------------------------------------------------+
 #property copyright   "Trade2Retire Academy"
-#property version     "1.00"
+#property version     "1.01"
 #property description "T2R Edge: Drift Breakout on Boom & Crash + Gold Trend forward test. Demo trades, website and member signals."
 #include <Trade\Trade.mqh>
 
@@ -344,7 +344,9 @@ void Close(const int k,const double px,const string why)
    g_sumR+=r; if(r>0.05) g_win++; else if(r<-0.05) g_loss++; else g_flat++;
    Log(g_t[k].sym+" "+kind+"  "+(r>=0 ? "+" : "")+DoubleToString(r,2)+"R");
    ObjectsDeleteAll(0,"T2RE_"+g_t[k].id);
-   ArrayRemove(g_t,k,1); g_nT--;
+   for(int i=k;i<g_nT-1;i++) g_t[i]=g_t[i+1];   // remove trade k
+   g_nT--;
+   ArrayResize(g_t,g_nT);
    SaveOpen();
   }
 
