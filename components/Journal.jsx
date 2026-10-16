@@ -18,7 +18,9 @@ export default function Journal() {
   const sp = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const all = data.TRADES;
+  const srcQ = sp.get('src') || '', setQ = sp.get('set') || '';
+  // the backtest (Jan - Oct 2026) of the proven setups joins the journal when asked for, or when a proven setup is picked
+  const all = useMemo(() => (srcQ === 'b' ? data.BT : !srcQ && (setQ === 'drift' || setQ === 'zones') ? data.BT.concat(data.TRADES).sort((a, b) => a.tin - b.tin) : data.TRADES), [data, srcQ, setQ]);
 
   const todayKey = dayKey(Date.now() / 1000);
   const minK = all.length ? all[0].day : todayKey;
@@ -115,7 +117,7 @@ export default function Journal() {
           <Select label="Market" value={q.mk} onChange={(v) => set({ mk: v })} options={marketOpts} allLabel="All markets" searchable />
           <Select label="Strategy" value={q.st} onChange={(v) => set({ st: v })} options={[...STRATS_LIVE, ...STRATS].map((s) => ({ value: s, label: s }))} allLabel="All strategies" />
           <Select label="Order" value={q.dir} onChange={(v) => set({ dir: v })} options={[{ value: 'buy', label: 'Buys' }, { value: 'sell', label: 'Sells' }]} allLabel="Buys and sells" />
-          <Select label="Source" value={q.src} onChange={(v) => set({ src: v })} options={[{ value: 'r', label: 'Replay of past days' }, { value: 'l', label: 'Live demo' }]} allLabel="Replay + live demo" right />
+          <Select label="Source" value={q.src} onChange={(v) => set({ src: v })} options={[{ value: 'b', label: 'Backtest Jan – Oct 2026' }, { value: 'r', label: 'Replay of past days' }, { value: 'l', label: 'Live demo' }]} allLabel="Replay + live demo" right />
           <Toggle checked={q.cap} onChange={(v) => set({ cap: v })}>Telegram plan: max 2 a market a day</Toggle>
           {anyFilter && <button type="button" className="chip" onClick={() => set({ set: '', fam: '', sg: '', mk: '', st: '', dir: '', src: '', cap: false, res: 'all' })}>Clear filters</button>}
         </div>
@@ -241,7 +243,7 @@ export default function Journal() {
                 </div>
               )}
               <div className="trow trow-h"><span>Time</span><span>Market</span><span>Strategy</span><span>Order</span><span style={{ textAlign: 'right' }}>Entry</span><span style={{ textAlign: 'right' }}>Stop</span><span style={{ textAlign: 'right' }}>Target</span><span style={{ textAlign: 'right' }}>R:R</span><span>Result</span><span style={{ textAlign: 'right' }}>R</span></div>
-              {L.map((t) => <Row key={t.id} t={t} onOpen={() => set({ t: t.id })} showDay={!k} />)}
+              {L.map((t) => <Row key={t.id} t={t} onOpen={t.e != null ? () => set({ t: t.id }) : undefined} showDay={!k} />)}
             </div>
           );
         })}
@@ -267,7 +269,7 @@ function Row({ t, onOpen, showDay }) {
   return (
     <motion.button type="button" className="trow" onClick={onOpen} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.25 }}>
       <span className="t">{showDay ? dayLabel(t.day).slice(4) + ' ' : ''}{hhmm(t.tin)}</span>
-      <span className="mk">{t.a}<small>{SETUP[setupOf(t)].e} {SETUP[setupOf(t)].t} · {t.fam}{t.src === 'l' ? ' · live demo' : ''}</small></span>
+      <span className="mk">{t.a}<small>{SETUP[setupOf(t)].e} {SETUP[setupOf(t)].t} · {t.fam}{t.src === 'l' ? ' · live demo' : t.src === 'b' ? ' · backtest' : ''}</small></span>
       <span className="st">{t.s}<small>{t.v} · {t.c}</small></span>
       <span><span className={'badge ' + t.dir}>{t.dir.toUpperCase()}</span></span>
       <span className="p">{fmtPrice(t.e, t.e)}</span>

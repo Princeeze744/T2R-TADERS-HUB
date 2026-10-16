@@ -14,6 +14,7 @@ function load() {
     cache = Promise.all([
       fetch('/data/lab.json').then((r) => r.json()),
       fetch('/data/trades.json').then((r) => (r.ok ? r.json() : { trades: [] })).catch(() => ({ trades: [] })),
+      fetch('/data/backtest.json').then((r) => (r.ok ? r.json() : { trades: [] })).catch(() => ({ trades: [] })),
     ]);
   }
   return cache;
@@ -40,7 +41,7 @@ export default function DataProvider({ children }) {
 
   const data = useMemo(() => {
     if (!raw) return null;
-    const [lab, tr] = raw;
+    const [lab, tr, bt] = raw;
     const MK = {};
     lab.markets.forEach((m) => { MK[m[0]] = { name: m[0], fam: familyOf(m[0]), bars: m[2], from: m[3], to: m[4], status: m[5] }; });
     const famOf = familyOf;
@@ -51,7 +52,9 @@ export default function DataProvider({ children }) {
     const TRADES = toTrades(tr.trades || [], famOf).concat(liveRows.map((r) => rowToTrade(r, famOf, dayKey, ratioOf))).sort((a, b) => a.tin - b.tin);
     const TBYID = {};
     TRADES.forEach((t) => { TBYID[t.id] = t; });
-    return { MK, famOf, ROWS, WATCH, WSET, TRADES, TBYID, meta: lab.meta, tmeta: { gen: tr.gen, from: tr.from, to: tr.to } };
+    const BT = toTrades(bt?.trades || [], famOf);   // backtest Jan - Oct 2026 of the proven setups (journal only)
+    BT.forEach((t) => { TBYID[t.id] = t; });
+    return { MK, famOf, ROWS, WATCH, WSET, TRADES, BT, TBYID, meta: lab.meta, tmeta: { gen: tr.gen, from: tr.from, to: tr.to } };
   }, [raw, liveRows]);
 
   return (

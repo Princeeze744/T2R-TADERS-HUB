@@ -46,7 +46,7 @@ export default function TradeDrawer({ trade, list, onClose, onNav }) {
           <motion.div key="scrim" className="scrim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} />
           <motion.aside key="drawer" className="drawer" initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ duration: 0.45, ease }} role="dialog" aria-label="Trade details">
             <div className="drawer-h">
-              <span className={'badge ' + (trade.src === 'l' ? 'live' : 'soft')}>{trade.src === 'l' ? <><span className="dot" />Live demo</> : 'Replay'}</span>
+              <span className={'badge ' + (trade.src === 'l' ? 'live' : 'soft')}>{trade.src === 'l' ? <><span className="dot" />Live demo</> : trade.src === 'b' ? 'Backtest' : 'Replay'}</span>
               <span className="dim" style={{ fontSize: 13 }}>{i + 1} of {list.length}</span>
               <div className="x">
                 <button type="button" className="iconbtn" disabled={!prev} onClick={() => prev && onNav(prev.id)} aria-label="Previous trade"><IcLeft s={16} /></button>
