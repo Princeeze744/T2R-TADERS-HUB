@@ -503,3 +503,20 @@ footer.foot .wrap{display:flex;justify-content:space-between;gap:20px;flex-wrap:
 .ss .card{min-width:0}
 .ss .grid>*{min-width:0}
 @media (max-width:560px){.ss .tbl th,.ss .tbl td{padding:10px 9px}}
+/* ---------- research ---------- */
+.rs-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.rs-card{height:100%}
+.rs-yes{border-color:rgba(54,211,153,.35)} .rs-yes::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:radial-gradient(600px 200px at 0% 0%,rgba(54,211,153,.08),transparent 70%)}
+.rs-badge{font-family:var(--mono);font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;padding:4px 10px;border-radius:999px;background:var(--s2)}
+.rs-badge.g{color:var(--win);background:var(--winbg)} .rs-badge.r{color:var(--loss);background:var(--lossbg)} .rs-badge.o{color:var(--open);background:var(--openbg)}
+.rs-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:16px}
+.rs-stats>div{padding:12px 14px;border-radius:var(--r2);background:var(--s1);border:1px solid var(--line);display:flex;flex-direction:column;gap:4px}
+.rs-stats span{font-size:12px;color:var(--mute)} .rs-stats b{font-family:var(--serif);font-weight:400;font-size:24px;line-height:1.1}
+.rs-lessons{grid-template-columns:repeat(5,minmax(0,1fr));margin-top:16px}
+.rs-lessons b{display:block;font-size:15.5px;margin-top:6px} .rs-lessons p{margin:6px 0 0;color:var(--mute);font-size:13.5px}
+.rs-num{font-family:var(--mono);font-size:12px;color:var(--gold)}
+@media (max-width:980px){.rs-grid,.rs-lessons{grid-template-columns:minmax(0,1fr)}}
+.dr-bars{display:grid;grid-template-columns:repeat(10,1fr);gap:8px;height:150px;margin-top:18px;align-items:end}
+.dr-bars>div{height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:4px}
+.dr-bars i{display:block;width:100%;border-radius:6px 6px 2px 2px;background:linear-gradient(180deg,var(--win),color-mix(in srgb,var(--win) 40%,transparent));min-height:4px}
+.dr-bars span{font-size:11px;color:var(--mute)} .dr-bars b{font-size:11px;font-family:var(--mono,monospace);font-weight:500;color:var(--mute)}

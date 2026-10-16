@@ -9,9 +9,10 @@ export const PAGES = [
   { href: '/', label: 'Overview', Ic: IcHome },
   { href: '/desk', label: 'Signal Desk', short: 'Desk', Ic: IcRadio, live: true },
   { href: '/spikes', label: 'Spike Study', short: 'Spikes', Ic: IcFlask },
+  { href: '/research', label: 'Research', short: 'Research', Ic: IcBook },
   { href: '/journal', label: 'Journal', short: 'Trades', Ic: IcJournal },
   { href: '/watchlist', label: 'Watchlist', short: 'Watch', Ic: IcStar, noTab: true },
-  { href: '/strategies', label: 'Strategies', short: 'Strategy', Ic: IcStrat },
+  { href: '/strategies', label: 'Strategies', short: 'Strategy', Ic: IcStrat, noTab: true },
   { href: '/explorer', label: 'Backtest', short: 'Backtest', Ic: IcExplore },
   { href: '/method', label: 'Method', short: 'Method', Ic: IcBook, noTab: true },
 ];

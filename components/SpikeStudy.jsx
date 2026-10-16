@@ -83,7 +83,7 @@ export default function SpikeStudy() {
     <div className="wrap ss">
       <div className="page-head">
         <Reveal><span className="eyebrow">Research · Catching spikes · Jan – Oct 2026</span></Reveal>
-        <Reveal delay={0.05}><h1 className="h-display" style={{ marginTop: 18 }}>Catch the spike.<br /><em>Never fight it.</em></h1></Reveal>
+        <Reveal delay={0.05}><h1 className="h-display" style={{ marginTop: 18 }}>Catch the spike.<br /><em>Ride the drift.</em></h1></Reveal>
         <Reveal delay={0.1}>
           <p className="lead">We tested {S.tested.toLocaleString('en-US')} trades on {S.markets_tested} markets, every candle from 1 January to {new Date(S.period[1]).getUTCDate()} October 2026, after spread. On Boom &amp; Crash, one rule held all year: <b style={{ color: 'var(--text)' }}>buy Boom, sell Crash</b>. The same setup traded the other way lost money at every target size.</p>
         </Reveal>
@@ -187,6 +187,21 @@ export default function SpikeStudy() {
         </div>
       </section>
 
+
+      <section className="sec-sm" id="drift">
+        <Reveal><div className="card pad">
+          <div className="between"><span className="rs-badge g">Proven edge · new</span><span className="note">5,507 trades · 20 Boom &amp; Crash markets · Jan – Oct 2026</span></div>
+          <h2 className="serif" style={{ fontSize: 34, margin: '12px 0 6px' }}>The Drift Breakout. <em>Ride the walk between spikes.</em></h2>
+          <p className="dim" style={{ marginTop: 0, fontSize: 14.5 }}>Mark the first 15-minute candle at 07:00 and 13:30 GMT. When price closes outside it, trade the break only if it goes with the drift: <b style={{ color: 'var(--text)' }}>sell Boom, buy Crash</b>. Stop half the candle, target 5R, out after 8 hours. Breaks the other way, with the spike, lost money, so the system skips them.</p>
+          <div className="rs-stats">
+            {[['Per trade, after spread', '+0.27R', 'g'], ['Total', '+1,473R', 'g'], ['Months in profit', '10 of 10', 'g'], ['Picked Jan – Jun → proven Jul – Oct', '+0.24R → +0.31R', 'g'], ['Breaks with the spike (skipped)', '−316R', 'r'], ['Win rate', '1 in 4', 'n']].map(([l, v, c]) => <div key={l}><span>{l}</span><b className={c}>{v}</b></div>)}
+          </div>
+          <div className="dr-bars">{[78, 83, 143, 96, 217, 143, 191, 185, 223, 114].map((v, i) => (
+            <div key={i}><i style={{ height: (v / 223) * 100 + '%' }} /><span>{['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O'][i]}</span><b>+{v}</b></div>
+          ))}</div>
+          <p className="note" style={{ marginTop: 12 }}>Every result is charged for the spike that jumps a stop (about −5R when it happens). Worst dip −80R and a longest losing run of 18, so it is traded at 0.25% risk: $1,000 → about +$3,680 over the ten months, with a worst dip of about −20%. October is to the 15th. Now live on the demo and on members' Telegram.</p>
+        </div></Reveal>
+      </section>
       <section className="sec-sm">
         <Reveal><div className="card pad ss-honest">
           <span className="eyebrow">Read this before trading it</span>

@@ -3,7 +3,7 @@
 //   body: one event object, or { "events": [ ... ] }
 // Event: { id, kind, at, price?, r?, r_t2r?, r_float?, market, strategy, view, side, stop_class, dir,
 //          order_type, entry, stop, tp1, target, rr, family?, note? }
-// kind: signal | activated | tp1 | target | stop | breakeven | cancel | update | sync
+// kind: signal | activated | tp1 | target | stop | breakeven | closed (time exit) | cancel | update | sync
 import { dbReady, rest } from '@/lib/supabase-server';
 import { waitUntil } from '@vercel/functions';
 import { fanout } from '@/lib/bot';
@@ -36,6 +36,7 @@ function rowFor(e) {
     case 'tp1': row.hit_tp1 = true; row.t_tp1 = at; break;
     case 'target': row.status = 'won'; row.t_close = at; row.exit_price = num(e.price); break;
     case 'stop': row.status = 'lost'; row.t_close = at; row.exit_price = num(e.price); break;
+    case 'closed': row.status = (num(e.r) ?? 0) > 0 ? 'won' : 'lost'; row.t_close = at; row.exit_price = num(e.price); break; // time exit
     case 'breakeven': row.status = 'won'; row.t_close = at; row.exit_price = num(e.price); break;
     case 'cancel': row.status = 'cancelled'; row.t_close = at; break;
     default: break; // update: only fields / floating R
@@ -43,7 +44,7 @@ function rowFor(e) {
   if (num(e.r) !== undefined) row.r_full = num(e.r);
   if (num(e.r_t2r) !== undefined) row.r_t2r = num(e.r_t2r);
   if (num(e.r_float) !== undefined) row.r_float = num(e.r_float);
-  if (['target', 'stop', 'breakeven', 'cancel'].includes(e.kind)) row.r_float = null;
+  if (['target', 'stop', 'breakeven', 'cancel', 'closed'].includes(e.kind)) row.r_float = null;
   return row;
 }
 

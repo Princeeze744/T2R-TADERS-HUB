@@ -189,8 +189,8 @@ function welcome(m) {
       kb: [[btn('📦 Set my balance', 'bal'), resultsBtn], [btn('ℹ️ How it works', 'how'), btn('💳 Extend', 'sub')]],
     };
   }
-  let t = `👋 <b>Welcome${name}, to ${esc(PRODUCT)}</b>\n\nBoom & Crash, DEX, Volatility and every synthetic market, from a system we test live, in public, every day. Buys and sells come straight to this chat:\n` +
-    `• entry, stop, take-profit and target on every card\n• your exact lot size for your balance\n• an update under each signal: filled, +1R, target, stop\n\n` +
+  let t = `👋 <b>Welcome${name}, to ${esc(PRODUCT)}</b>\n\nBoom & Crash signals from the only two setups that passed our 3-million-trade test: ⚡ <b>zones with the spike</b> and 🌊 the <b>Drift Breakout</b>. They come straight to this chat:\n` +
+    `• entry, stop, take-profit and target on every card\n• your exact lot size for your balance\n• an update under each signal: target, stop or time's up\n\n` +
     `📊 Every result is public, wins and losses. Tap <b>Live results</b> and judge for yourself.\n\n`;
   if (!m.trial_used) {
     t += `🎁 Start with a <b>${TRIAL_DAYS}-day free trial</b>. No card needed.`;

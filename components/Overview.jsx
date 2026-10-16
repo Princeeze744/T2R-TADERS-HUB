@@ -60,7 +60,7 @@ export default function Overview() {
     { Ic: IcFlask, t: 'Backtest everything', p: `Nine strategies replayed on every 15-minute candle of ${Object.keys(data.MK).length} markets, close to two years each. ${nf(data.meta.trades)} test trades, after spread.` },
     { Ic: IcShield, t: 'Pass a three-stage exam', p: 'History is cut in three. Stage 1 teaches, stages 2 and 3 are unseen. A setup must make money on history it never saw.' },
     { Ic: IcRadio, t: 'Prove it live on demo', p: `${data.WATCH.length} winning setups on ${followedMk} markets are followed live with real prices and real fills, around the clock.` },
-    { Ic: IcSend, t: 'Approved signals only', p: 'Each signal reaches the admin first. Approved ones go to the channel with entry, stop, TP1 and target, then live updates.' },
+    { Ic: IcSend, t: 'Approved signals only', p: 'Members get each proven signal by private message on Telegram: entry, stop and target, their own lot size, then live updates.' },
   ];
 
   return (
@@ -70,13 +70,14 @@ export default function Overview() {
           <div className="hero-grid">
             <div>
               <Reveal><span className="eyebrow">Trade2Retire Academy · T2R Lab</span></Reveal>
-              <Reveal delay={0.06}><h1 className="h-display" style={{ marginTop: 22 }}>Nine strategies.<br />{Object.keys(data.MK).length} markets.<br /><em>Every trade counted.</em></h1></Reveal>
-              <Reveal delay={0.14}><p className="lead">A computer tested our zone strategies on Deriv synthetics, trade by trade, and only kept what held up on history it had never seen. Pick any day and see every trade on the chart.</p></Reveal>
+              <Reveal delay={0.06}><h1 className="h-display" style={{ marginTop: 22 }}>Catch the spike.<br /><em>Ride the drift.</em></h1></Reveal>
+              <Reveal delay={0.14}><p className="lead">Over 3 million test trades on {Object.keys(data.MK).length}+ markets found two edges on Boom &amp; Crash: our zones traded <b style={{ color: 'var(--text)' }}>with the spike</b>, and the <b style={{ color: 'var(--text)' }}>Drift Breakout</b> that rides the walk between spikes. We publish every trade, and we only sell what is proven.</p></Reveal>
               <Reveal delay={0.2}>
                 <div className="hero-cta">
                   <Link href="/desk" className="btn primary"><span className="live-dot" />Signal Desk <IcArrow s={16} /></Link>
-                  <Link href="/journal" className="btn ghost">Trade journal</Link>
-                  <Link href="/method" className="btn ghost">How it works</Link>
+                  <Link href="/spikes" className="btn ghost">⚡ The spike edge</Link>
+                  <Link href="/spikes#drift" className="btn ghost">🌊 Drift Breakout</Link>
+                  <Link href="/research" className="btn ghost">Everything we tested</Link>
                 </div>
               </Reveal>
             </div>
