@@ -7,7 +7,7 @@
 //| plan (Wide stop, 1:3) drawn on the nearest learned zone; live card.
 //+------------------------------------------------------------------+
 #property copyright "SELF-TAUGHT ZONES"
-#property version   "2.40"
+#property version   "3.00"
 #property strict
 #property indicator_chart_window
 #property indicator_buffers 0
@@ -47,7 +47,8 @@ input double          InpTargetR      = 3.0;         // Target in R (EA: 3)
 input bool            InpLearnExit    = true;        // Learned exit: pick the stop and target that worked best, if it proves itself on unseen data
 input int             InpExitMinN     = 30;          // Learned exit: tests needed in the learning half (and half that in the proof half)
 input double          InpExitSlip     = 0.10;        // Learned exit: slippage charged per trade (x zone height), punishes tight stops
-input bool            InpCard         = true;        // Show the live Learned Zone card
+input bool            InpLearnTF      = true;        // Learned timeframe: find the best chart timeframe (M15 / M30 / H1), re-checked every hour
+input bool            InpCard         = true;        // Show the dashboard
 input bool            InpCardBottom   = false;       // Card at the bottom right (off = top right)
 
 input group "Zones on the chart"
@@ -891,6 +892,16 @@ int    g_exSi=2, g_exLv=3;
 double g_exEvNew=0.0, g_exEvFix=0.0;
 int    g_exN=0, g_exNn=0;
 string g_exWhy="";
+ENUM_TIMEFRAMES g_cand[3]={PERIOD_M15,PERIOD_M30,PERIOD_H1};
+bool   g_tfOk[3];
+bool   g_tfProven[3];
+double g_tfEv[3];
+double g_tfWin[3];
+int    g_tfN[3];
+int    g_tfSi[3];
+int    g_tfLv[3];
+int    g_bestTf=-1;
+datetime g_tfScanAt=0;
 bool   g_exPool=false;
 double g_exWin=0.0;
 
@@ -1119,6 +1130,8 @@ string g_barsSig="";
 datetime g_lastTry=0;
 string g_cardSig="";
 
+bool g_details=false;
+
 void DrawCard(const double price)
   {
    string p=PFX+"CD_";
@@ -1128,133 +1141,164 @@ void DrawCard(const double price)
       return;
      }
    color cBg=C'18,20,26', cHead=C'28,31,40', cLine=C'48,52,64', cTxt=C'222,225,232', cDim=C'128,133,146',
-         cGold=C'232,190,92', cTrack=C'40,44,56';
+         cGold=C'232,190,92', cTrack=C'40,44,56', cOk=InpBuyColor, cWarn=C'240,170,70';
    int cw=(int)ChartGetInteger(0,CHART_WIDTH_IN_PIXELS,0);
    int ch=(int)ChartGetInteger(0,CHART_HEIGHT_IN_PIXELS,0);
-   int w=Px(268);
+   int w=Px(300);
    int x=cw-w-Px(14);
    int d=PlanDir();
    int sd=SpikeSide();
    //--- collapsed: a small pill
    if(g_cardMin)
      {
-      string sig="min";
-      if(g_cardSig!=sig)
+      if(g_cardSig!="min")
         {
          ObjectsDeleteAll(0,p);
-         g_cardSig=sig;
+         g_cardSig="min";
         }
-      int pw=Px(170), ph=Px(24);
+      int pw=Px(176), ph=Px(24);
       int px=cw-pw-Px(14), py=(InpCardBottom ? ch-ph-Px(14) : Px(26));
       CRect(p+"bg",px,py,pw,ph,cHead,cLine);
-      CText(p+"t",px+Px(10),py+Px(5),Ch(0x2B50)+" LEARNED ZONE"+(d>=0 ? (d==0 ? "  BUY" : "  SELL") : ""),cGold,8,true,false);
+      CText(p+"t",px+Px(10),py+Px(5),Ch(0x2B50)+" T2R PLAN"+(d>=0 ? (d==0 ? "  BUY" : "  SELL") : ""),cGold,8,true,false);
       CButton(p+"btn",px+pw-Px(26),py+Px(3),Px(22),Px(18),"+",cLine,cTxt);
       return;
      }
-   int h=Px(d>=0 ? 348 : 206);
+   int bd=(sd==1) ? 0 : (sd==2) ? 1 : (d>=0 ? d : 0);
+   if(g_modelOk)
+      LearnExitM(bd,-1);                          // BEST SETTINGS on this chart
+   bool showTf=(InpLearnTF && sd>0 && g_tfScanAt>0);
+   int h=Px(52)+(showTf ? Px(96) : 0)+Px(94)+(d>=0 && g_modelOk ? Px(118) : Px(48))+Px(26);
    int y=InpCardBottom ? ch-h-Px(14) : Px(26);
-   string sig="full"+IntegerToString(d>=0 ? 1 : 0);
+   string sig="full"+IntegerToString(d>=0 ? 1 : 0)+IntegerToString(showTf ? 1 : 0)+IntegerToString(g_modelOk ? 1 : 0);
    if(g_cardSig!=sig)
      {
       ObjectsDeleteAll(0,p);
       g_cardSig=sig;
      }
    color acc=(d==0) ? InpBuyColor : (d==1) ? InpSellColor : cGold;
-   //--- frame, accent bar, header
    CRect(p+"bg",x,y,w,h,cBg,cLine);
    CRect(p+"acc",x,y,Px(3),h,acc,acc);
    CRect(p+"hd",x+Px(3),y,w-Px(3),Px(30),cHead,cHead);
-   CText(p+"ttl",x+Px(14),y+Px(8),Ch(0x2B50)+"  T2R LEARNED ZONE",cGold,9,true,false);
-   CText(p+"sym",x+w-Px(34),y+Px(9),_Symbol,cDim,7,false,true);
+   CText(p+"ttl",x+Px(14),y+Px(8),Ch(0x2B50)+"  T2R PLAN  "+Ch(0xB7)+"  "+_Symbol,cGold,9,true,false);
+   CButton(p+"det",x+w-Px(84),y+Px(6),Px(52),Px(18),g_details ? "Close" : "Details",cLine,cTxt);
    CButton(p+"btn",x+w-Px(28),y+Px(6),Px(20),Px(18),"-",cLine,cTxt);
-   int lx=x+Px(14), rx=x+w-Px(12), yy=y+Px(40);
-   int bw0=w-Px(26);
-   //--- BEST SETTINGS for this market: learned on the older half, proven on the newer half
-   int bd=(sd==1) ? 0 : (sd==2) ? 1 : (d>=0 ? d : 0);
-   if(g_modelOk)
+   int lx=x+Px(14), rx=x+w-Px(12), bw=w-Px(26), yy=y+Px(40);
+   string cur=TFName((ENUM_TIMEFRAMES)_Period);
+
+   //--- 1. BEST CHART TIMEFRAME (learned)
+   if(showTf)
      {
-      LearnExitM(bd,-1);
-      CText(p+"b0",lx,yy,"BEST SETTINGS  "+Ch(0xB7)+"  "+((bd==0) ? "BUYS" : "SELLS"),cDim,7,true,false);
-      string bs=g_exL ? "SL "+g_smName[g_exSi]+"   TP "+g_levName[g_exLv]+"   1:"+RRStr(g_lev[g_exLv]/g_sm[g_exSi]) : "SL 1x   TP 3x   1:3";
-      CText(p+"b1",lx,yy+Px(14),bs,cGold,11,true,false);
-      CText(p+"b2",rx,yy+Px(17),g_exL ? Ch(0x2714)+" proven" : Ch(0x26A0)+" default",g_exL ? InpBuyColor : C'240,170,70',8,true,true);
-      string b3=g_exL ? "Unseen: "+((g_exEvNew>=0) ? "+" : "")+DoubleToString(g_exEvNew,2)+"R/trade  "+Ch(0xB7)+"  win "+IntegerToString((int)MathRound(100.0*g_exWin))+"%  "+Ch(0xB7)+"  "+IntegerToString(g_exNn)+" trades"
-                      : g_exWhy;
-      CText(p+"b3",lx,yy+Px(36),b3,g_exL ? cTxt : cDim,7,false,false);
-      if(g_exL)
-         CText(p+"b4",lx,yy+Px(50),"vs fixed 1:3: "+((g_exEvFix>=0) ? "+" : "")+DoubleToString(g_exEvFix,2)+"R/trade  "+Ch(0xB7)+"  slippage charged",cDim,7,false,false);
+      CText(p+"s1",lx,yy,"1  BEST CHART TIMEFRAME",cDim,7,true,false);
+      yy+=Px(16);
+      for(int c=0;c<3;c++)
+        {
+         string nm=TFName(g_cand[c]);
+         bool best=(c==g_bestTf);
+         string row=g_tfOk[c] ? ((g_tfEv[c]>=0) ? "+" : "")+DoubleToString(g_tfEv[c],2)+"R a trade   "+Ch(0xB7)+"   "+IntegerToString(g_tfN[c])+" tests"
+                              : "not enough history";
+         CText(p+"tfn"+IntegerToString(c),lx,yy,(best ? Ch(0x25B6)+" " : "   ")+nm,best ? cGold : cTxt,9,best,false);
+         CText(p+"tfv"+IntegerToString(c),lx+Px(62),yy+Px(1),row,best ? cTxt : cDim,8,false,false);
+         if(best)
+            CText(p+"tfb",rx,yy+Px(1),"BEST",cOk,8,true,true);
+         yy+=Px(18);
+        }
+      string adv="";
+      color ac=cDim;
+      if(g_bestTf>=0)
+        {
+         if(g_cand[g_bestTf]==(ENUM_TIMEFRAMES)_Period)
+           {
+            adv=Ch(0x2714)+"  You are on the best timeframe ("+cur+")";
+            ac=cOk;
+           }
+         else
+           {
+            adv=Ch(0x26A0)+"  Switch this chart to "+TFName(g_cand[g_bestTf])+" for the best plan";
+            ac=cWarn;
+           }
+        }
       else
-         CText(p+"b4",lx,yy+Px(50),"Signals use the fixed Wide 1:3 until a better exit is proven",cDim,7,false,false);
-      CRect(p+"bl",lx,yy+Px(68),bw0,Px(1),cLine,cLine);
-      yy+=Px(78);
+         adv="No timeframe has enough proof yet";
+      CText(p+"adv",lx,yy+Px(2),adv,ac,8,true,false);
+      yy+=Px(24);
+      CRect(p+"l1",lx,yy,bw,Px(1),cLine,cLine);
+      yy+=Px(8);
      }
-   if(!g_modelOk || d<0)
+
+   //--- 2. BEST STOP AND TARGET (learned on this chart, proven on data it never saw)
+   CText(p+"s2",lx,yy,(showTf ? "2  " : "")+"BEST STOP & TARGET  "+Ch(0xB7)+"  "+((bd==0) ? "BUYS" : "SELLS")+"  "+Ch(0xB7)+"  "+cur,cDim,7,true,false);
+   yy+=Px(16);
+   if(!g_modelOk)
      {
-      CText(p+"m1",lx,yy,!g_modelOk ? "Model still learning this market" : "No learned zone in view",cTxt,9,true,false);
-      CText(p+"m2",lx,yy+Px(20),!g_modelOk ? "Give it a few seconds" : "The card wakes up when the model picks one",cDim,8,false,false);
-      CText(p+"m3",lx,yy+Px(48),StatusLine(),cDim,7,false,false);
-      return;
-     }
-   double ent,sl,tp,unit;
-   PlanLevels(d,ent,sl,tp,unit);
-   bool isWith=(sd==1 && d==0) || (sd==2 && d==1);
-   //--- row 1: side badge, timeframes, score pill
-   CRect(p+"sb",lx,yy,Px(46),Px(22),acc,acc);
-   CText(p+"st",lx+Px(23),yy+Px(4),(d==0) ? "BUY" : "SELL",C'255,255,255',9,true,false);
-   ObjectSetInteger(0,p+"st",OBJPROP_ANCHOR,ANCHOR_UPPER);
-   CText(p+"tf",lx+Px(56),yy+Px(4),MaskNames(g_pkMask[d]),cTxt,9,true,false);
-   CRect(p+"sc",rx-Px(64),yy,Px(64),Px(22),cTrack,cLine);
-   CText(p+"scv",rx-Px(32),yy+Px(4),"score "+((g_pkSc[d]>=0) ? "+" : "")+DoubleToString(g_pkSc[d],2),cGold,8,true,false);
-   ObjectSetInteger(0,p+"scv",OBJPROP_ANCHOR,ANCHOR_UPPER);
-   //--- row 2: spike side
-   yy+=Px(32);
-   string sp=(sd==0) ? "Not a spike market" : (isWith ? Ch(0x2714)+"  With the spike  "+Ch(0xB7)+"  proven T2R side" : Ch(0x26A0)+"  Against the spike  "+Ch(0xB7)+"  not the T2R setup");
-   CText(p+"sp",lx,yy,sp,(sd==0) ? cDim : (isWith ? InpBuyColor : C'240,170,70'),8,true,false);
-   //--- row 3: status + distance bar
-   yy+=Px(24);
-   bool inz=(price>=g_pkLo[d] && price<=g_pkHi[d]);
-   double away=(g_latr>0.0) ? g_pkD[d]/g_latr : 0.0;
-   CText(p+"ss",lx,yy,inz ? Ch(0x25CF)+"  PRICE IN THE ZONE" : "WAITING FOR PRICE",inz ? cGold : cTxt,8,true,false);
-   CText(p+"sd",rx,yy,inz ? "entry now" : DoubleToString(away,1)+" ATR away",cDim,8,false,true);
-   int bw=w-Px(26);
-   double fill=inz ? 1.0 : MathMax(0.04,1.0-MathMin(away/4.0,1.0));
-   CRect(p+"bt",lx,yy+Px(19),bw,Px(5),cTrack,cTrack);
-   CRect(p+"bf",lx,yy+Px(19),(int)(bw*fill),Px(5),inz ? cGold : acc,inz ? cGold : acc);
-   //--- row 4: the plan, three columns
-   yy+=Px(36);
-   CRect(p+"pl",lx,yy-Px(6),bw,Px(1),cLine,cLine);
-   int col=bw/3;
-   string lb[3];
-   string vl[3];
-   color vc[3];
-   lb[0]="ENTRY";
-   lb[1]="STOP  -1R";
-   lb[2]="TARGET  +"+RRStr(PlanRR())+"R";
-   vl[0]=DoubleToString(ent,_Digits);
-   vl[1]=DoubleToString(sl,_Digits);
-   vl[2]=DoubleToString(tp,_Digits);
-   vc[0]=cGold;
-   vc[1]=InpSellColor;
-   vc[2]=InpBuyColor;
-   for(int i=0;i<3;i++)
-     {
-      CText(p+"pl"+IntegerToString(i),lx+i*col,yy,lb[i],cDim,7,false,false);
-      CText(p+"pv"+IntegerToString(i),lx+i*col,yy+Px(14),vl[i],vc[i],8,true,false);
-     }
-   //--- footer
-   yy+=Px(42);
-   CRect(p+"fl",lx,yy-Px(6),bw,Px(1),cLine,cLine);
-   if(g_exL)
-     {
-      CText(p+"f1",lx,yy,Ch(0x2699)+"  LEARNED EXIT  stop "+g_smName[g_exSi]+"  "+Ch(0xB7)+"  target "+g_levName[g_exLv]+"  "+Ch(0xB7)+"  1:"+RRStr(PlanRR()),cGold,8,true,false);
-      CText(p+"f2",lx,yy+Px(16),"Unseen: "+((g_exEvNew>=0) ? "+" : "")+DoubleToString(g_exEvNew,2)+"R vs 1:3 "+((g_exEvFix>=0) ? "+" : "")+DoubleToString(g_exEvFix,2)+"R  "+Ch(0xB7)+"  "+IntegerToString(g_exNn)+" trades"+(g_exPool ? " (all zones)" : ""),InpBuyColor,7,false,false);
+      CText(p+"b1",lx,yy,"Learning this market, a few seconds...",cTxt,9,true,false);
+      yy+=Px(70);
      }
    else
      {
-      CText(p+"f1",lx,yy,"FIXED EXIT  Wide stop  "+Ch(0xB7)+"  1:"+RRStr(InpTargetR)+"  "+Ch(0xB7)+"  as the EA",cTxt,8,true,false);
-      CText(p+"f2",lx,yy+Px(16),g_exWhy,cDim,7,false,false);
+      double rr=g_exL ? g_lev[g_exLv]/g_sm[g_exSi] : InpTargetR;
+      string top=g_exL ? "Stop "+g_smName[g_exSi]+"    Target "+g_levName[g_exLv]+"    1:"+RRStr(rr) : "Stop 1x    Target 3x    1:3";
+      CText(p+"b1",lx,yy,top,cGold,11,true,false);
+      CText(p+"b2",rx,yy+Px(3),g_exL ? Ch(0x2714)+" PROVEN" : "DEFAULT",g_exL ? cOk : cWarn,8,true,true);
+      yy+=Px(24);
+      string why=g_exL ? "On data it never saw: "+((g_exEvNew>=0) ? "+" : "")+DoubleToString(g_exEvNew,2)+"R a trade, won "+IntegerToString((int)MathRound(100.0*g_exWin))+"% of "+IntegerToString(g_exNn)
+                       : "Nothing beat 1:3 with proof yet, so we keep 1:3";
+      CText(p+"b3",lx,yy,why,cTxt,8,false,false);
+      yy+=Px(16);
+      string why2=g_exL ? "The usual 1:3 made "+((g_exEvFix>=0) ? "+" : "")+DoubleToString(g_exEvFix,2)+"R a trade (slippage charged)" : g_exWhy;
+      CText(p+"b4",lx,yy,why2,cDim,7,false,false);
+      yy+=Px(30);
      }
-   CText(p+"f3",lx,yy+Px(32),StatusLine(),cDim,7,false,false);
+   CRect(p+"l2",lx,yy-Px(8),bw,Px(1),cLine,cLine);
+
+   //--- 3. THE TRADE NOW
+   CText(p+"s3",lx,yy,(showTf ? "3  " : "")+"THE TRADE NOW",cDim,7,true,false);
+   yy+=Px(16);
+   if(!g_modelOk || d<0)
+     {
+      CText(p+"n1",lx,yy,!g_modelOk ? "Waiting for the model" : "No learned zone near price right now",cTxt,9,true,false);
+      CText(p+"n2",lx,yy+Px(18),"The plan appears here when the model picks a zone",cDim,7,false,false);
+     }
+   else
+     {
+      double ent,sl,tp,unit;
+      PlanLevels(d,ent,sl,tp,unit);
+      bool isWith=(sd==1 && d==0) || (sd==2 && d==1);
+      CRect(p+"sb",lx,yy,Px(46),Px(22),acc,acc);
+      CText(p+"st",lx+Px(23),yy+Px(4),(d==0) ? "BUY" : "SELL",C'255,255,255',9,true,false);
+      ObjectSetInteger(0,p+"st",OBJPROP_ANCHOR,ANCHOR_UPPER);
+      CText(p+"tf",lx+Px(56),yy+Px(4),MaskNames(g_pkMask[d])+" zone",cTxt,9,true,false);
+      CText(p+"wv",rx,yy+Px(5),(sd==0) ? "" : (isWith ? Ch(0x2714)+" with the spike" : Ch(0x26A0)+" against the spike"),isWith ? cOk : cWarn,8,true,true);
+      yy+=Px(30);
+      bool inz=(price>=g_pkLo[d] && price<=g_pkHi[d]);
+      double away=(g_latr>0.0) ? g_pkD[d]/g_latr : 0.0;
+      CText(p+"ss",lx,yy,inz ? Ch(0x25CF)+"  PRICE IS IN THE ZONE: ENTER" : "Waiting for price to reach the zone",inz ? cGold : cTxt,8,true,false);
+      CText(p+"sd",rx,yy,inz ? "now" : DoubleToString(away,1)+" ATR away",cDim,8,false,true);
+      double fill=inz ? 1.0 : MathMax(0.04,1.0-MathMin(away/4.0,1.0));
+      CRect(p+"bt",lx,yy+Px(18),bw,Px(5),cTrack,cTrack);
+      CRect(p+"bf",lx,yy+Px(18),(int)(bw*fill),Px(5),inz ? cGold : acc,inz ? cGold : acc);
+      yy+=Px(32);
+      int col=bw/3;
+      string lb[3];
+      string vl[3];
+      color vc[3];
+      lb[0]="ENTRY";
+      lb[1]="STOP  -1R";
+      lb[2]="TARGET  +"+RRStr(PlanRR())+"R";
+      vl[0]=DoubleToString(ent,_Digits);
+      vl[1]=DoubleToString(sl,_Digits);
+      vl[2]=DoubleToString(tp,_Digits);
+      vc[0]=cGold;
+      vc[1]=InpSellColor;
+      vc[2]=InpBuyColor;
+      for(int i=0;i<3;i++)
+        {
+         CText(p+"pl"+IntegerToString(i),lx+i*col,yy,lb[i],cDim,7,false,false);
+         CText(p+"pv"+IntegerToString(i),lx+i*col,yy+Px(14),vl[i],vc[i],9,true,false);
+        }
+      yy+=Px(34);
+      CText(p+"pf",lx,yy,"Stop and target come from BEST STOP & TARGET above",cDim,7,false,false);
+     }
+   CText(p+"ft",lx,y+h-Px(18),StatusLine(),cDim,7,false,false);
   }
 
 //+------------------------------------------------------------------+
@@ -1347,6 +1391,8 @@ int StatH(const int i,const int view,const int lev)
    return StatHs(i,view,g_stop,lev);
   }
 
+ENUM_TIMEFRAMES g_ctf=PERIOD_CURRENT;      // the timeframe the scorecard runs on (chart, or a candidate in the timeframe scan)
+
 void RunScore()
   {
    g_nStats=0;
@@ -1355,11 +1401,12 @@ void RunScore()
    g_scoreBars=0;
    if(g_nAct==0)
       return;
-   int want=MathMin(MathMax(InpScoreBars,200),Bars(_Symbol,_Period)-1);
+   ENUM_TIMEFRAMES stf=(g_ctf==PERIOD_CURRENT) ? (ENUM_TIMEFRAMES)_Period : g_ctf;
+   int want=MathMin(MathMax(InpScoreBars,200),Bars(_Symbol,stf)-1);
    if(want<200)
       return;
    MqlRates cb[];
-   int nb=CopyRates(_Symbol,_Period,1,want,cb);        // closed chart bars only
+   int nb=CopyRates(_Symbol,stf,1,want,cb);           // closed bars only
    if(nb<200)
       return;
    datetime winStart=cb[0].time;
@@ -1726,7 +1773,7 @@ void AddRow(PRow &rows[],int &nr,const int kind,const string label,const int n,
 void DrawPanel()
   {
    string p=PFX+"P_";
-   if(!InpPanelShow)
+   if(!InpPanelShow || !g_details)
      {
       ObjectsDeleteAll(0,p);
       g_panelState=-1;
@@ -2050,6 +2097,73 @@ void DrawPanel()
 //+------------------------------------------------------------------+
 //| Main redraw                                                      |
 //+------------------------------------------------------------------+
+//--- timeframes in use for a chart timeframe of psec seconds: above it, no repeats, lowest first
+void SetAct(const int psec)
+  {
+   g_nAct=0;
+   for(int k=0;k<4;k++)
+     {
+      if(!g_show[k] || PeriodSeconds(g_tf[k])<=psec)
+         continue;
+      bool dup=false;
+      for(int e=0;e<g_nAct;e++)
+         if(g_tf[g_act[e]]==g_tf[k])
+            dup=true;
+      if(dup)
+         continue;
+      g_act[g_nAct]=k;
+      g_nAct++;
+     }
+   for(int i=0;i<g_nAct-1;i++)
+      for(int j=i+1;j<g_nAct;j++)
+         if(PeriodSeconds(g_tf[g_act[j]])<PeriodSeconds(g_tf[g_act[i]]))
+           {
+            int tmp=g_act[i];
+            g_act[i]=g_act[j];
+            g_act[j]=tmp;
+           }
+  }
+
+//--- LEARNED TIMEFRAME: score the market on each candidate chart timeframe, keep its proven best settings
+
+void TFScan()
+  {
+   int sd=SpikeSide();
+   int dd=(sd==2) ? 1 : 0;
+   for(int c=0;c<3;c++)
+     {
+      g_tfOk[c]=false;
+      g_ctf=g_cand[c];
+      SetAct(PeriodSeconds(g_cand[c]));
+      if(g_nAct==0)
+         continue;
+      RunScore();
+      if(!g_scoreOk || !g_modelOk)
+         continue;
+      LearnExitM(dd,-1);
+      g_tfOk[c]=(g_exNn>=10 || g_exL);
+      g_tfProven[c]=g_exL;
+      g_tfSi[c]=g_exL ? g_exSi : 2;
+      g_tfLv[c]=g_exL ? g_exLv : 3;
+      g_tfEv[c]=g_exL ? g_exEvNew : g_exEvFix;
+      g_tfWin[c]=g_exL ? g_exWin : ExitRate(-1,dd,1,2,3);
+      int nf=0;
+      ExitEv(-1,dd,1,2,3,nf);
+      g_tfN[c]=g_exL ? g_exNn : nf;
+      if(nf<10 && !g_exL)
+         g_tfOk[c]=false;
+     }
+   g_bestTf=-1;
+   for(int c=0;c<3;c++)
+      if(g_tfOk[c] && (g_bestTf<0 || g_tfEv[c]>g_tfEv[g_bestTf]))
+         g_bestTf=c;
+   //--- back to the chart's own timeframe
+   g_ctf=PERIOD_CURRENT;
+   SetAct(PeriodSeconds());
+   g_scoreOk=false;
+   g_tfScanAt=TimeLocal();
+  }
+
 void Redraw()
   {
    g_t0=iTime(_Symbol,_Period,0);
@@ -2057,8 +2171,8 @@ void Redraw()
       return;
    g_ps=PeriodSeconds();
 
-//--- timeframes in use: above the chart timeframe, no repeats, lowest first
-   g_nAct=0;
+   SetAct(g_ps);
+   if(false)
    for(int k=0;k<4;k++)
      {
       if(!g_show[k] || PeriodSeconds(g_tf[k])<=g_ps)
@@ -2101,6 +2215,8 @@ void Redraw()
       string bsig="";
       for(int e=0;e<g_nAct;e++)
          bsig+=IntegerToString(iBars(_Symbol,g_tf[g_act[e]]))+"|";
+      if(InpLearnTF && SpikeSide()>0 && (g_tfScanAt==0 || TimeLocal()-g_tfScanAt>=3600) && iBars(_Symbol,PERIOD_H1)>500)
+         TFScan();
       if(wantScore && (!g_scoreOk || (!g_modelOk && TimeLocal()-g_lastTry>=30) || g_scoreAt!=g_t0 || g_scoreN!=g_nAct || bsig!=g_barsSig))
         {
          g_barsSig=bsig;
@@ -2144,6 +2260,8 @@ int OnInit()
      }
    g_cardMin=(GlobalVariableCheck(GV+"cardmin") && GlobalVariableGet(GV+"cardmin")>0.5);
    g_cardSig="";
+   g_details=(GlobalVariableCheck(GV+"details") && GlobalVariableGet(GV+"details")>0.5);
+   g_tfScanAt=0;
    g_dpi=(double)TerminalInfoInteger(TERMINAL_SCREEN_DPI)/96.0;
    if(g_dpi<1.0)
       g_dpi=1.0;
@@ -2197,6 +2315,15 @@ void OnChartEvent(const int id,const long &lparam,const double &dparam,const str
       Redraw();
    if(id==CHARTEVENT_OBJECT_CLICK)
      {
+      if(sparam==PFX+"CD_det")
+        {
+         g_details=!g_details;
+         GlobalVariableSet(GV+"details",g_details ? 1.0 : 0.0);
+         g_cardSig="";
+         g_panelState=-1;
+         Redraw();
+         return;
+        }
       if(sparam==PFX+"CD_btn")
         {
          g_cardMin=!g_cardMin;
