@@ -7,7 +7,7 @@
 //| plan (Wide stop, 1:3) drawn on the nearest learned zone; live card.
 //+------------------------------------------------------------------+
 #property copyright "SELF-TAUGHT ZONES"
-#property version   "2.20"
+#property version   "2.40"
 #property strict
 #property indicator_chart_window
 #property indicator_buffers 0
@@ -45,7 +45,7 @@ input bool            InpPlan         = true;        // Draw the trade plan on t
 input double          InpWideATR      = 3.0;         // Wide stop: 1R = zone height, at least this x ATR (EA: 3.0)
 input double          InpTargetR      = 3.0;         // Target in R (EA: 3)
 input bool            InpLearnExit    = true;        // Learned exit: pick the stop and target that worked best, if it proves itself on unseen data
-input int             InpExitMinN     = 40;          // Learned exit: tests needed in the learning half (and half that in the proof half)
+input int             InpExitMinN     = 30;          // Learned exit: tests needed in the learning half (and half that in the proof half)
 input double          InpExitSlip     = 0.10;        // Learned exit: slippage charged per trade (x zone height), punishes tight stops
 input bool            InpCard         = true;        // Show the live Learned Zone card
 input bool            InpCardBottom   = false;       // Card at the bottom right (off = top right)
@@ -891,18 +891,48 @@ int    g_exSi=2, g_exLv=3;
 double g_exEvNew=0.0, g_exEvFix=0.0;
 int    g_exN=0, g_exNn=0;
 string g_exWhy="";
+bool   g_exPool=false;
+double g_exWin=0.0;
 
+double ExitRate(const int i,const int d,const int hf,const int si,const int lv)
+  {
+   int base=((1*2+d)*2+hf)*4+si;
+   int n=0,hits=0;
+   for(int k=0;k<g_nStats;k++)
+     {
+      if(i>=0 && k!=i)
+         continue;
+      n+=g_stats[k].n[base];
+      hits+=g_stats[k].h[base*4+lv];
+     }
+   return (n>0) ? (double)hits/n : 0.0;
+  }
+
+//--- i >= 0: one zone type (timeframe mix); i = -1: every zone type of that side pooled together
 double ExitEv(const int i,const int d,const int hf,const int si,const int lv,int &n)
   {
    int base=((1*2+d)*2+hf)*4+si;                 // view 1 = model picks
-   n=g_stats[i].n[base];
+   n=0;
+   int hits=0;
+   for(int k=0;k<g_nStats;k++)
+     {
+      if(i>=0 && k!=i)
+         continue;
+      n+=g_stats[k].n[base];
+      hits+=g_stats[k].h[base*4+lv];
+     }
    if(n<=0)
       return -9.0;
-   double rate=(double)g_stats[i].h[base*4+lv]/n;
+   double rate=(double)hits/n;
    return rate*(g_lev[lv]/g_sm[si])-(1.0-rate)-MathMax(InpExitSlip,0.0)/g_sm[si];
   }
 
 void LearnExit(const int d)
+  {
+   LearnExitM(d,-1);                            // the signal plan always uses the market's BEST SETTINGS for that side
+  }
+
+void LearnExitM(const int d,const int mask)
   {
    g_exL=false;
    g_exSi=2;
@@ -915,13 +945,14 @@ void LearnExit(const int d)
      }
    int row=-1;
    for(int i=0;i<g_nStats;i++)
-      if(g_stats[i].mask==g_pkMask[d])
+      if(mask>=0 && g_stats[i].mask==mask)
          row=i;
-   if(row<0)
-     {
-      g_exWhy="no history for "+MaskNames(g_pkMask[d])+" zones yet";
-      return;
-     }
+   int nr=0;
+   if(row>=0)
+      ExitEv(row,d,0,2,3,nr);
+   if(row<0 || nr<InpExitMinN)
+      row=-1;                                     // too few of this exact zone type: learn from all zones of this side
+   g_exPool=(row<0);
    //--- learn: the best stop and target on the older half
    double best=-99.0;
    int bs=-1,bl=-1,bn=0;
@@ -940,7 +971,7 @@ void LearnExit(const int d)
         }
    if(bs<0)
      {
-      g_exWhy="too few tests to learn ("+MaskNames(g_pkMask[d])+")";
+      g_exWhy="too few tests to learn yet (needs "+IntegerToString(InpExitMinN)+")";
       return;
      }
    //--- prove: on the newer half, against the fixed 1x stop / 3x target
@@ -948,6 +979,7 @@ void LearnExit(const int d)
    double evNew=ExitEv(row,d,1,bs,bl,nn);
    double evFix=ExitEv(row,d,1,2,3,nf);
    g_exEvNew=evNew;
+   g_exWin=ExitRate(row,d,1,bs,bl);
    g_exEvFix=evFix;
    g_exN=bn;
    g_exNn=nn;
@@ -1119,7 +1151,7 @@ void DrawCard(const double price)
       CButton(p+"btn",px+pw-Px(26),py+Px(3),Px(22),Px(18),"+",cLine,cTxt);
       return;
      }
-   int h=Px(d>=0 ? 270 : 128);
+   int h=Px(d>=0 ? 348 : 206);
    int y=InpCardBottom ? ch-h-Px(14) : Px(26);
    string sig="full"+IntegerToString(d>=0 ? 1 : 0);
    if(g_cardSig!=sig)
@@ -1136,6 +1168,26 @@ void DrawCard(const double price)
    CText(p+"sym",x+w-Px(34),y+Px(9),_Symbol,cDim,7,false,true);
    CButton(p+"btn",x+w-Px(28),y+Px(6),Px(20),Px(18),"-",cLine,cTxt);
    int lx=x+Px(14), rx=x+w-Px(12), yy=y+Px(40);
+   int bw0=w-Px(26);
+   //--- BEST SETTINGS for this market: learned on the older half, proven on the newer half
+   int bd=(sd==1) ? 0 : (sd==2) ? 1 : (d>=0 ? d : 0);
+   if(g_modelOk)
+     {
+      LearnExitM(bd,-1);
+      CText(p+"b0",lx,yy,"BEST SETTINGS  "+Ch(0xB7)+"  "+((bd==0) ? "BUYS" : "SELLS"),cDim,7,true,false);
+      string bs=g_exL ? "SL "+g_smName[g_exSi]+"   TP "+g_levName[g_exLv]+"   1:"+RRStr(g_lev[g_exLv]/g_sm[g_exSi]) : "SL 1x   TP 3x   1:3";
+      CText(p+"b1",lx,yy+Px(14),bs,cGold,11,true,false);
+      CText(p+"b2",rx,yy+Px(17),g_exL ? Ch(0x2714)+" proven" : Ch(0x26A0)+" default",g_exL ? InpBuyColor : C'240,170,70',8,true,true);
+      string b3=g_exL ? "Unseen: "+((g_exEvNew>=0) ? "+" : "")+DoubleToString(g_exEvNew,2)+"R/trade  "+Ch(0xB7)+"  win "+IntegerToString((int)MathRound(100.0*g_exWin))+"%  "+Ch(0xB7)+"  "+IntegerToString(g_exNn)+" trades"
+                      : g_exWhy;
+      CText(p+"b3",lx,yy+Px(36),b3,g_exL ? cTxt : cDim,7,false,false);
+      if(g_exL)
+         CText(p+"b4",lx,yy+Px(50),"vs fixed 1:3: "+((g_exEvFix>=0) ? "+" : "")+DoubleToString(g_exEvFix,2)+"R/trade  "+Ch(0xB7)+"  slippage charged",cDim,7,false,false);
+      else
+         CText(p+"b4",lx,yy+Px(50),"Signals use the fixed Wide 1:3 until a better exit is proven",cDim,7,false,false);
+      CRect(p+"bl",lx,yy+Px(68),bw0,Px(1),cLine,cLine);
+      yy+=Px(78);
+     }
    if(!g_modelOk || d<0)
      {
       CText(p+"m1",lx,yy,!g_modelOk ? "Model still learning this market" : "No learned zone in view",cTxt,9,true,false);
@@ -1195,7 +1247,7 @@ void DrawCard(const double price)
    if(g_exL)
      {
       CText(p+"f1",lx,yy,Ch(0x2699)+"  LEARNED EXIT  stop "+g_smName[g_exSi]+"  "+Ch(0xB7)+"  target "+g_levName[g_exLv]+"  "+Ch(0xB7)+"  1:"+RRStr(PlanRR()),cGold,8,true,false);
-      CText(p+"f2",lx,yy+Px(16),"Unseen data: "+((g_exEvNew>=0) ? "+" : "")+DoubleToString(g_exEvNew,2)+"R vs 1:3 "+((g_exEvFix>=0) ? "+" : "")+DoubleToString(g_exEvFix,2)+"R  "+Ch(0xB7)+"  "+IntegerToString(g_exNn)+" tests",InpBuyColor,7,false,false);
+      CText(p+"f2",lx,yy+Px(16),"Unseen: "+((g_exEvNew>=0) ? "+" : "")+DoubleToString(g_exEvNew,2)+"R vs 1:3 "+((g_exEvFix>=0) ? "+" : "")+DoubleToString(g_exEvFix,2)+"R  "+Ch(0xB7)+"  "+IntegerToString(g_exNn)+" trades"+(g_exPool ? " (all zones)" : ""),InpBuyColor,7,false,false);
      }
    else
      {
