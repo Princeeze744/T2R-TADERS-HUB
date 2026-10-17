@@ -7,7 +7,7 @@
 //| plan (Wide stop, 1:3) drawn on the nearest learned zone; live card.
 //+------------------------------------------------------------------+
 #property copyright "SELF-TAUGHT ZONES"
-#property version   "3.10"
+#property version   "3.30"
 #property strict
 #property indicator_chart_window
 #property indicator_buffers 0
@@ -65,7 +65,7 @@ input group "Panel and scorecard"
 input bool            InpPanelShow    = true;        // Show the panel
 input ENUM_BASE_CORNER InpPanelCorner = CORNER_LEFT_LOWER; // Panel corner
 input int             InpScoreBars    = 20000;       // Scorecard: chart bars of history to test
-input double          InpScoreMinRisk = 0.25;        // Scorecard: smallest zone height allowed (x ATR)
+input double          InpScoreMinRisk = 3.0;         // Tests: 1x stop = zone height, at least this x ATR (3 = the EA's Wide stop)
 input int             InpScoreMinN    = 20;          // Scorecard: tests needed before a row is coloured
 input int             InpScoreRows    = 8;           // Scorecard: combos listed per group (1-20)
 
@@ -902,6 +902,7 @@ int    g_tfN[3];
 int    g_tfSi[3];
 int    g_tfLv[3];
 int    g_bestTf=-1;
+double g_tfAtr[3];
 datetime g_tfScanAt=0;
 bool   g_exPool=false;
 double g_exWin=0.0;
@@ -909,13 +910,18 @@ double g_exWin=0.0;
 //--- pooled result for a view (0 = every zone, 1 = model picks), side, history half, stop and target
 double EvView(const int view,const int d,const int hf,const int si,const int lv,int &n,double &win)
   {
-   int base=((view*2+d)*2+hf)*4+si;
    n=0;
    int hits=0;
-   for(int k=0;k<g_nStats;k++)
+   for(int dd=0;dd<2;dd++)
      {
-      n+=g_stats[k].n[base];
-      hits+=g_stats[k].h[base*4+lv];
+      if(d!=2 && dd!=d)
+         continue;
+      int base=((view*2+dd)*2+hf)*4+si;
+      for(int k=0;k<g_nStats;k++)
+        {
+         n+=g_stats[k].n[base];
+         hits+=g_stats[k].h[base*4+lv];
+        }
      }
    win=(n>0) ? (double)hits/n : 0.0;
    if(n<=0)
@@ -925,14 +931,19 @@ double EvView(const int view,const int d,const int hf,const int si,const int lv,
 
 double ExitRate(const int i,const int d,const int hf,const int si,const int lv)
   {
-   int base=((1*2+d)*2+hf)*4+si;
    int n=0,hits=0;
-   for(int k=0;k<g_nStats;k++)
+   for(int dd=0;dd<2;dd++)
      {
-      if(i>=0 && k!=i)
+      if(d!=2 && dd!=d)
          continue;
-      n+=g_stats[k].n[base];
-      hits+=g_stats[k].h[base*4+lv];
+      int base=((1*2+dd)*2+hf)*4+si;
+      for(int k=0;k<g_nStats;k++)
+        {
+         if(i>=0 && k!=i)
+            continue;
+         n+=g_stats[k].n[base];
+         hits+=g_stats[k].h[base*4+lv];
+        }
      }
    return (n>0) ? (double)hits/n : 0.0;
   }
@@ -940,15 +951,20 @@ double ExitRate(const int i,const int d,const int hf,const int si,const int lv)
 //--- i >= 0: one zone type (timeframe mix); i = -1: every zone type of that side pooled together
 double ExitEv(const int i,const int d,const int hf,const int si,const int lv,int &n)
   {
-   int base=((1*2+d)*2+hf)*4+si;                 // view 1 = model picks
    n=0;
    int hits=0;
-   for(int k=0;k<g_nStats;k++)
+   for(int dd=0;dd<2;dd++)
      {
-      if(i>=0 && k!=i)
+      if(d!=2 && dd!=d)
          continue;
-      n+=g_stats[k].n[base];
-      hits+=g_stats[k].h[base*4+lv];
+      int base=((1*2+dd)*2+hf)*4+si;              // view 1 = model picks
+      for(int k=0;k<g_nStats;k++)
+        {
+         if(i>=0 && k!=i)
+            continue;
+         n+=g_stats[k].n[base];
+         hits+=g_stats[k].h[base*4+lv];
+        }
      }
    if(n<=0)
       return -9.0;
@@ -956,9 +972,15 @@ double ExitEv(const int i,const int d,const int hf,const int si,const int lv,int
    return rate*(g_lev[lv]/g_sm[si])-(1.0-rate)-MathMax(InpExitSlip,0.0)/g_sm[si];
   }
 
+int BestSide()
+  {
+   int sd=SpikeSide();
+   return (sd==1) ? 0 : (sd==2) ? 1 : 2;
+  }
+
 void LearnExit(const int d)
   {
-   LearnExitM(d,-1);                            // the signal plan always uses the market's BEST SETTINGS for that side
+   LearnExitM(BestSide(),-1);                            // the signal plan always uses the market's BEST SETTINGS for that side
   }
 
 void LearnExitM(const int d,const int mask)
@@ -1032,22 +1054,47 @@ void LearnExitM(const int d,const int mask)
    g_exWhy="learned exit did not beat 1:3 on unseen data";
   }
 
+//--- the plan is static: it always uses the BEST timeframe's best stop and target, whatever chart you are on
+bool BestOn()
+  {
+   return (InpLearnTF && g_bestTf>=0 && g_tfEv[g_bestTf]>0.0);
+  }
+
+double g_planAtr=0.0;
+
+void ApplyBest()
+  {
+   g_planAtr=g_latr;
+   if(!BestOn())
+      return;
+   int b=g_bestTf;
+   g_exL=g_tfProven[b];
+   g_exSi=g_tfSi[b];
+   g_exLv=g_tfLv[b];
+   g_exEvNew=g_tfEv[b];
+   g_exWin=g_tfWin[b];
+   g_exNn=g_tfN[b];
+   if(g_tfAtr[b]>0.0)
+      g_planAtr=g_tfAtr[b];
+  }
+
 void PlanLevels(const int d,double &ent,double &sl,double &tp,double &unit)
   {
    LearnExit(d);
+   ApplyBest();
    double h=g_pkHi[d]-g_pkLo[d];
    ent=(d==0) ? g_pkHi[d] : g_pkLo[d];
    if(g_exL)
      {
       //--- the scorecard's units: 1x = zone height (at least the scorecard minimum x ATR)
-      double z=MathMax(h,MathMax(InpScoreMinRisk,0.0)*g_latr);
+      double z=MathMax(h,MathMax(InpScoreMinRisk,0.0)*g_planAtr);
       double st=g_sm[g_exSi]*z;
       unit=st;
       sl=(d==0) ? ent-st : ent+st;
       tp=(d==0) ? ent+g_lev[g_exLv]*z : ent-g_lev[g_exLv]*z;
       return;
      }
-   unit=MathMax(h,MathMax(InpWideATR,0.0)*g_latr);
+   unit=MathMax(h,MathMax(InpWideATR,0.0)*g_planAtr);
    sl=(d==0) ? ent-unit : ent+unit;
    tp=(d==0) ? ent+InpTargetR*unit : ent-InpTargetR*unit;
   }
@@ -1175,7 +1222,7 @@ void DrawBob()
      }
    color cBg=C'18,20,26', cHead=C'28,31,40', cLine=C'48,52,64', cTxt=C'222,225,232', cDim=C'128,133,146', cGold=C'232,190,92';
    int sd=SpikeSide();
-   int dd=(sd==2) ? 1 : (sd==1) ? 0 : (PlanDir()>=0 ? PlanDir() : 0);
+   int dd=BestSide();
    //--- the four steps, all on the newer half (data the model never saw)
    int n1,n2,n3,n4;
    double w1,w2,w3,w4;
@@ -1210,7 +1257,7 @@ void DrawBob()
    CText(p+"ttl",x+Px(14),y+Px(8),Ch(0x2B50)+Ch(0x2B50)+"  BEST OF THE BEST  "+Ch(0xB7)+"  "+_Symbol,cGold,9,true,false);
    CButton(p+"x",x+w-Px(28),y+Px(6),Px(20),Px(18),"x",cLine,cTxt);
    int lx=x+Px(14), bw=w-Px(28), yy=y+Px(40);
-   CText(p+"s0",lx,yy,"What learning did on "+((dd==0) ? "BUYS" : "SELLS")+", tested on data the model never saw",cDim,7,false,false);
+   CText(p+"s0",lx,yy,"What learning did on "+((dd==0) ? "BUYS" : (dd==1) ? "SELLS" : "BUYS + SELLS")+", tested on data the model never saw",cDim,7,false,false);
    yy+=Px(20);
    BobRow(p,"r1",lx,yy,bw,"1  Every zone","no learning  "+Ch(0xB7)+"  1:3  "+Ch(0xB7)+"  "+TFName((ENUM_TIMEFRAMES)_Period),e1,w1,n1,mx,false);
    yy+=Px(52);
@@ -1275,10 +1322,13 @@ void DrawCard(const double price)
       CButton(p+"btn",px+pw-Px(26),py+Px(3),Px(22),Px(18),"+",cLine,cTxt);
       return;
      }
-   int bd=(sd==1) ? 0 : (sd==2) ? 1 : (d>=0 ? d : 0);
+   int bd=BestSide();
    if(g_modelOk)
-      LearnExitM(bd,-1);                          // BEST SETTINGS on this chart
-   bool showTf=(InpLearnTF && sd>0 && g_tfScanAt>0);
+     {
+      LearnExitM(bd,-1);                          // best settings on this chart...
+      ApplyBest();                                // ...replaced by the BEST timeframe's when it is profitable
+     }
+   bool showTf=(InpLearnTF && g_tfScanAt>0);
    int h=Px(52)+(showTf ? Px(96) : 0)+Px(94)+(d>=0 && g_modelOk ? Px(118) : Px(48))+Px(26);
    int y=InpCardBottom ? ch-h-Px(14) : Px(26);
    string sig="full"+IntegerToString(d>=0 ? 1 : 0)+IntegerToString(showTf ? 1 : 0)+IntegerToString(g_modelOk ? 1 : 0);
@@ -1331,8 +1381,8 @@ void DrawCard(const double price)
            }
          else
            {
-            adv=Ch(0x26A0)+"  Switch this chart to "+TFName(g_cand[g_bestTf])+" for the best plan";
-            ac=cWarn;
+            adv=Ch(0x2714)+"  Plan uses "+TFName(g_cand[g_bestTf])+". Switch to it to see the same candles";
+            ac=cGold;
            }
         }
       else
@@ -1344,7 +1394,8 @@ void DrawCard(const double price)
      }
 
    //--- 2. BEST STOP AND TARGET (learned on this chart, proven on data it never saw)
-   CText(p+"s2",lx,yy,(showTf ? "2  " : "")+"BEST STOP & TARGET  "+Ch(0xB7)+"  "+((bd==0) ? "BUYS" : "SELLS")+"  "+Ch(0xB7)+"  "+cur,cDim,7,true,false);
+   string sideTxt=(bd==0) ? "BUYS" : (bd==1) ? "SELLS" : "BUYS + SELLS";
+   CText(p+"s2",lx,yy,(showTf ? "2  " : "")+"BEST STOP & TARGET  "+Ch(0xB7)+"  "+sideTxt+"  "+Ch(0xB7)+"  "+(BestOn() ? "from "+TFName(g_cand[g_bestTf])+" (best)" : cur),cDim,7,true,false);
    yy+=Px(16);
    if(!g_modelOk)
      {
@@ -1358,11 +1409,13 @@ void DrawCard(const double price)
       CText(p+"b1",lx,yy,top,cGold,11,true,false);
       CText(p+"b2",rx,yy+Px(3),g_exL ? Ch(0x2714)+" PROVEN" : "DEFAULT",g_exL ? cOk : cWarn,8,true,true);
       yy+=Px(24);
-      string why=g_exL ? "On data it never saw: "+((g_exEvNew>=0) ? "+" : "")+DoubleToString(g_exEvNew,2)+"R a trade, won "+IntegerToString((int)MathRound(100.0*g_exWin))+"% of "+IntegerToString(g_exNn)
+      string why=(BestOn() && !g_exL) ? "1:3 made "+DoubleToString(g_exEvNew,2)+"R a trade, won "+IntegerToString((int)MathRound(100.0*g_exWin))+"% of "+IntegerToString(g_exNn)+" (unseen data)"
+                 : g_exL ? "On data it never saw: "+((g_exEvNew>=0) ? "+" : "")+DoubleToString(g_exEvNew,2)+"R a trade, won "+IntegerToString((int)MathRound(100.0*g_exWin))+"% of "+IntegerToString(g_exNn)
                        : "Nothing beat 1:3 with proof yet, so we keep 1:3";
       CText(p+"b3",lx,yy,why,cTxt,8,false,false);
       yy+=Px(16);
-      string why2=g_exL ? "The usual 1:3 made "+((g_exEvFix>=0) ? "+" : "")+DoubleToString(g_exEvFix,2)+"R a trade (slippage charged)" : g_exWhy;
+      string why2=BestOn() ? "Same plan on every chart: it comes from the best timeframe"
+                  : (g_exL ? "The usual 1:3 made "+((g_exEvFix>=0) ? "+" : "")+DoubleToString(g_exEvFix,2)+"R a trade (slippage charged)" : g_exWhy);
       CText(p+"b4",lx,yy,why2,cDim,7,false,false);
       yy+=Px(30);
      }
@@ -2247,11 +2300,12 @@ void SetAct(const int psec)
 
 void TFScan()
   {
-   int sd=SpikeSide();
-   int dd=(sd==2) ? 1 : 0;
+   int dd=BestSide();
    for(int c=0;c<3;c++)
      {
       g_tfOk[c]=false;
+      MqlRates ar[];
+      g_tfAtr[c]=(CopyRates(_Symbol,g_cand[c],1,30,ar)>=20) ? AtrAt(ar,ArraySize(ar)-1) : 0.0;
       g_ctf=g_cand[c];
       SetAct(PeriodSeconds(g_cand[c]));
       if(g_nAct==0)
@@ -2334,7 +2388,7 @@ void Redraw()
       string bsig="";
       for(int e=0;e<g_nAct;e++)
          bsig+=IntegerToString(iBars(_Symbol,g_tf[g_act[e]]))+"|";
-      if(InpLearnTF && SpikeSide()>0 && (g_tfScanAt==0 || TimeLocal()-g_tfScanAt>=3600) && iBars(_Symbol,PERIOD_H1)>500)
+      if(InpLearnTF && (g_tfScanAt==0 || TimeLocal()-g_tfScanAt>=3600) && iBars(_Symbol,PERIOD_H1)>500)
          TFScan();
       if(wantScore && (!g_scoreOk || (!g_modelOk && TimeLocal()-g_lastTry>=30) || g_scoreAt!=g_t0 || g_scoreN!=g_nAct || bsig!=g_barsSig))
         {
@@ -2379,7 +2433,7 @@ int OnInit()
      }
    g_cardMin=(GlobalVariableCheck(GV+"cardmin") && GlobalVariableGet(GV+"cardmin")>0.5);
    g_cardSig="";
-   g_details=(GlobalVariableCheck(GV+"details") && GlobalVariableGet(GV+"details")>0.5);
+   g_details=false;                             // the expert scorecard always starts closed
    g_tfScanAt=0;
    g_dpi=(double)TerminalInfoInteger(TERMINAL_SCREEN_DPI)/96.0;
    if(g_dpi<1.0)
