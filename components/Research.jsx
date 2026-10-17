@@ -37,6 +37,21 @@ const PERIODS = [
   ['🥇 Gold Trend · 4-hour breakout', 'XAUUSD', 'Jul 2024 – Oct 2026', '2024 – 2025: positive', '2026: mixed', 'watch'],
   ['🧪 Lab tests · all other setups', '100+ markets', 'Live since Oct 2026', 'Picked by the Lab exam', 'Building a live record on the Signal Desk', 'watch'],
 ];
+
+// forex, gold, indices and crypto: the settings that made money in BOTH periods (63 of 281,719 tested)
+const FXTOP = [
+  ['XAUUSD (gold)', 'Donchian breakout · 4-hour, 55 candles', 130, '+75.6R', 41, '+46.1R'],
+  ['XAUUSD (gold) · our Gold Trend in the EA', 'Donchian breakout · 4-hour, 20 candles · 1:3', 198, '+77.6R', 85, '+33.0R'],
+  ['XAUEUR', 'Donchian breakout · 4-hour, 55 candles', 131, '+60.0R', 48, '+34.1R'],
+  ['XAUUSD (gold)', 'Momentum · 20 days, hold 4 weeks', 75, '+41.9R', 37, '+22.2R'],
+  ['Germany 40', 'Opening range breakout · NY 13:30', 377, '+63.5R', 127, '+32.6R'],
+  ['BNBUSD', 'Opening range breakout · NY 14:30, buys', 213, '+54.7R', 141, '+31.9R'],
+  ['XMRUSD (Monero)', 'Hour 11 GMT, sells, hold 4 hours', 548, '+29.3R', 287, '+19.1R'],
+  ['AUDNZD', 'Donchian breakout · 4-hour, buys', 114, '+23.1R', 62, '+16.1R'],
+  ['XMRUSD (Monero)', 'London–NY reversal · 12:00, sells', 69, '+21.5R', 30, '+12.7R'],
+  ['GBPAUD', 'Donchian breakout · 4-hour, buys', 103, '+31.2R', 33, '+11.2R'],
+  ['UK 100', 'Liquidity sweep · London + NY, buys', 143, '+28.4R', 39, '+10.1R'],
+];
 const LESSONS = [
   ['Trade with the spike.', 'The same zones make money with the spike and lose money against it.'],
   ['Spikes do not follow the clock.', 'No hour, minute or weekday held up on unseen months. The session open matters only as a range to break.'],
@@ -66,6 +81,20 @@ export default function Research() {
           </Reveal>
         ))}
       </div>
+      <section className="sec-sm" id="forex">
+        <Reveal><div className="card pad">
+          <div className="between"><span className="rs-badge o">Watching · forward test</span><span className="note">51 forex pairs + gold, indices, crypto · Jul 2024 – Oct 2026 · after spread</span></div>
+          <h2 className="serif" style={{ fontSize: 30, margin: '10px 0 4px' }}>Forex, gold &amp; indices: <em>the few that held up.</em></h2>
+          <p className="dim" style={{ marginTop: 0, fontSize: 14 }}>We tested 281,719 settings over two periods. Only 63 made money in both, and the best are below. That is 1 in 4,500, so some are luck. That is why they are on a live forward test, not sold yet. Gold&apos;s 4-hour breakout is already running live in our EA.</p>
+          <div className="tbl-wrap"><table className="tbl">
+            <thead><tr><th className="l">Market</th><th className="l">Setup</th><th>Trades 2024 – 25</th><th>Result Jul 2024 – Dec 2025</th><th>Trades 2026</th><th>Result Jan – Oct 2026</th></tr></thead>
+            <tbody>{FXTOP.map((r) => (
+              <tr key={r[0] + r[1]}><td className="l b">{r[0]}</td><td className="l">{r[1]}</td><td className="mono">{r[2]}</td><td className="mono g">{r[3]}</td><td className="mono">{r[4]}</td><td className="mono g">{r[5]}</td></tr>
+            ))}</tbody>
+          </table></div>
+          <p className="note" style={{ marginTop: 12 }}>Most forex settings lost money after spread. These are the exceptions, picked from the full list, and they become signals only after a live record proves them.</p>
+        </div></Reveal>
+      </section>
       <section className="sec-sm">
         <Reveal><div className="card pad">
           <span className="eyebrow">Every test, every period</span>
