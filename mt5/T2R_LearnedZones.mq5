@@ -44,7 +44,8 @@ input bool            InpShowOthers   = true;        // Also show zones the mode
 input bool            InpPlan         = true;        // Draw the trade plan on the nearest learned zone
 input double          InpWideATR      = 3.0;         // Wide stop: 1R = zone height, at least this x ATR (EA: 3.0)
 input double          InpTargetR      = 3.0;         // Target in R (EA: 3)
-input bool            InpCard         = true;        // Show the live Learned Zone card (top right)
+input bool            InpCard         = true;        // Show the live Learned Zone card
+input bool            InpCardBottom   = false;       // Card at the bottom right (off = top right)
 
 input group "Zones on the chart"
 input int             InpLookback     = 60;          // Candles a zone stays valid (per timeframe)
@@ -912,16 +913,35 @@ void DrawPlan(const double price)
    SetText(p+"Tt",x1,tp,"TARGET +"+DoubleToString(InpTargetR,0)+"R "+DoubleToString(tp,_Digits),InpBuyColor,fs,ANCHOR_LEFT_LOWER);
   }
 
-void CardLine(const string name,const int x,const int y,const string txt,const color c,const int fsz,const bool bold)
+//--- card building blocks (all placed from the chart's top-left corner, in pixels)
+void CRect(const string name,const int x,const int y,const int w,const int h,const color bg,const color border)
+  {
+   if(ObjectFind(0,name)<0)
+     {
+      ObjectCreate(0,name,OBJ_RECTANGLE_LABEL,0,0,0);
+      ObjectSetInteger(0,name,OBJPROP_CORNER,CORNER_LEFT_UPPER);
+      ObjectSetInteger(0,name,OBJPROP_BORDER_TYPE,BORDER_FLAT);
+      ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
+      ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
+     }
+   ObjectSetInteger(0,name,OBJPROP_XDISTANCE,x);
+   ObjectSetInteger(0,name,OBJPROP_YDISTANCE,y);
+   ObjectSetInteger(0,name,OBJPROP_XSIZE,MathMax(w,1));
+   ObjectSetInteger(0,name,OBJPROP_YSIZE,MathMax(h,1));
+   ObjectSetInteger(0,name,OBJPROP_BGCOLOR,bg);
+   ObjectSetInteger(0,name,OBJPROP_COLOR,border);
+  }
+
+void CText(const string name,const int x,const int y,const string txt,const color c,const int fsz,const bool bold,const bool right)
   {
    if(ObjectFind(0,name)<0)
      {
       ObjectCreate(0,name,OBJ_LABEL,0,0,0);
+      ObjectSetInteger(0,name,OBJPROP_CORNER,CORNER_LEFT_UPPER);
       ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
       ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
-      ObjectSetInteger(0,name,OBJPROP_CORNER,CORNER_RIGHT_UPPER);
-      ObjectSetInteger(0,name,OBJPROP_ANCHOR,ANCHOR_LEFT_UPPER);
      }
+   ObjectSetInteger(0,name,OBJPROP_ANCHOR,right ? ANCHOR_RIGHT_UPPER : ANCHOR_LEFT_UPPER);
    ObjectSetInteger(0,name,OBJPROP_XDISTANCE,x);
    ObjectSetInteger(0,name,OBJPROP_YDISTANCE,y);
    ObjectSetString(0,name,OBJPROP_TEXT,txt);
@@ -929,6 +949,31 @@ void CardLine(const string name,const int x,const int y,const string txt,const c
    ObjectSetInteger(0,name,OBJPROP_FONTSIZE,fsz);
    ObjectSetInteger(0,name,OBJPROP_COLOR,c);
   }
+
+void CButton(const string name,const int x,const int y,const int w,const int h,const string txt,const color bg,const color fg)
+  {
+   if(ObjectFind(0,name)<0)
+     {
+      ObjectCreate(0,name,OBJ_BUTTON,0,0,0);
+      ObjectSetInteger(0,name,OBJPROP_CORNER,CORNER_LEFT_UPPER);
+      ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
+      ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
+      ObjectSetString(0,name,OBJPROP_FONT,"Segoe UI Semibold");
+      ObjectSetInteger(0,name,OBJPROP_FONTSIZE,8);
+     }
+   ObjectSetInteger(0,name,OBJPROP_XDISTANCE,x);
+   ObjectSetInteger(0,name,OBJPROP_YDISTANCE,y);
+   ObjectSetInteger(0,name,OBJPROP_XSIZE,w);
+   ObjectSetInteger(0,name,OBJPROP_YSIZE,h);
+   ObjectSetString(0,name,OBJPROP_TEXT,txt);
+   ObjectSetInteger(0,name,OBJPROP_BGCOLOR,bg);
+   ObjectSetInteger(0,name,OBJPROP_BORDER_COLOR,bg);
+   ObjectSetInteger(0,name,OBJPROP_COLOR,fg);
+   ObjectSetInteger(0,name,OBJPROP_STATE,false);
+  }
+
+bool g_cardMin=false;
+string g_cardSig="";
 
 void DrawCard(const double price)
   {
@@ -938,61 +983,105 @@ void DrawCard(const double price)
       ObjectsDeleteAll(0,p);
       return;
      }
-   color cBg=C'22,24,30', cLine=C'52,56,68', cTxt=C'214,217,224', cDim=C'135,139,150', cGold=C'240,200,90';
-   int w=Px(310), h=Px(184), x=Px(12), y=Px(28);
-   string bg=p+"bg";
-   if(ObjectFind(0,bg)<0)
-     {
-      ObjectCreate(0,bg,OBJ_RECTANGLE_LABEL,0,0,0);
-      ObjectSetInteger(0,bg,OBJPROP_CORNER,CORNER_RIGHT_UPPER);
-      ObjectSetInteger(0,bg,OBJPROP_BORDER_TYPE,BORDER_FLAT);
-      ObjectSetInteger(0,bg,OBJPROP_SELECTABLE,false);
-      ObjectSetInteger(0,bg,OBJPROP_HIDDEN,true);
-     }
-   ObjectSetInteger(0,bg,OBJPROP_XDISTANCE,x+w);
-   ObjectSetInteger(0,bg,OBJPROP_YDISTANCE,y);
-   ObjectSetInteger(0,bg,OBJPROP_XSIZE,w);
-   ObjectSetInteger(0,bg,OBJPROP_YSIZE,h);
-   ObjectSetInteger(0,bg,OBJPROP_BGCOLOR,cBg);
-   ObjectSetInteger(0,bg,OBJPROP_COLOR,cLine);
-   int lx=x+w-Px(14), ly=y+Px(10), st=Px(20);
-   CardLine(p+"t0",lx,ly,Ch(0x2B50)+" T2R LEARNED ZONE",cGold,10,true);
+   color cBg=C'18,20,26', cHead=C'28,31,40', cLine=C'48,52,64', cTxt=C'222,225,232', cDim=C'128,133,146',
+         cGold=C'232,190,92', cTrack=C'40,44,56';
+   int cw=(int)ChartGetInteger(0,CHART_WIDTH_IN_PIXELS,0);
+   int ch=(int)ChartGetInteger(0,CHART_HEIGHT_IN_PIXELS,0);
+   int w=Px(268);
+   int x=cw-w-Px(14);
    int d=PlanDir();
    int sd=SpikeSide();
-   string l1,l2,l3,l4,l5,l6;
-   color c1=cTxt,c3=cTxt;
-   if(!g_modelOk)
+   //--- collapsed: a small pill
+   if(g_cardMin)
      {
-      l1="Model still learning this market..."; l2=""; l3=""; l4=""; l5=""; l6="";
+      string sig="min";
+      if(g_cardSig!=sig)
+        {
+         ObjectsDeleteAll(0,p);
+         g_cardSig=sig;
+        }
+      int pw=Px(170), ph=Px(24);
+      int px=cw-pw-Px(14), py=(InpCardBottom ? ch-ph-Px(14) : Px(26));
+      CRect(p+"bg",px,py,pw,ph,cHead,cLine);
+      CText(p+"t",px+Px(10),py+Px(5),Ch(0x2B50)+" LEARNED ZONE"+(d>=0 ? (d==0 ? "  BUY" : "  SELL") : ""),cGold,8,true,false);
+      CButton(p+"btn",px+pw-Px(26),py+Px(3),Px(22),Px(18),"+",cLine,cTxt);
+      return;
      }
-   else if(d<0)
+   int h=Px(d>=0 ? 236 : 128);
+   int y=InpCardBottom ? ch-h-Px(14) : Px(26);
+   string sig="full"+IntegerToString(d>=0 ? 1 : 0);
+   if(g_cardSig!=sig)
      {
-      l1="No learned zone in view right now"; l2="Waiting for the model to pick one"; l3=""; l4=""; l5="";
-      l6=StatusLine();
+      ObjectsDeleteAll(0,p);
+      g_cardSig=sig;
      }
-   else
+   color acc=(d==0) ? InpBuyColor : (d==1) ? InpSellColor : cGold;
+   //--- frame, accent bar, header
+   CRect(p+"bg",x,y,w,h,cBg,cLine);
+   CRect(p+"acc",x,y,Px(3),h,acc,acc);
+   CRect(p+"hd",x+Px(3),y,w-Px(3),Px(30),cHead,cHead);
+   CText(p+"ttl",x+Px(14),y+Px(8),Ch(0x2B50)+"  T2R LEARNED ZONE",cGold,9,true,false);
+   CText(p+"sym",x+w-Px(34),y+Px(9),_Symbol,cDim,7,false,true);
+   CButton(p+"btn",x+w-Px(28),y+Px(6),Px(20),Px(18),"-",cLine,cTxt);
+   int lx=x+Px(14), rx=x+w-Px(12), yy=y+Px(40);
+   if(!g_modelOk || d<0)
      {
-      double ent,sl,tp,unit;
-      PlanLevels(d,ent,sl,tp,unit);
-      bool isWith=(sd==0) ? false : ((sd==1 && d==0) || (sd==2 && d==1));
-      l1=(d==0 ? "BUY zone  " : "SELL zone  ")+MaskNames(g_pkMask[d])+"   score "+((g_pkSc[d]>=0) ? "+" : "")+DoubleToString(g_pkSc[d],2);
-      c1=(d==0) ? InpBuyColor : InpSellColor;
-      l2=(sd==0) ? "Not a spike market: model pick only" : (isWith ? Ch(0x2705)+" With the spike: the proven T2R side" : Ch(0x26A0)+" Against the spike: not the T2R setup");
-      bool inz=(price>=g_pkLo[d] && price<=g_pkHi[d]);
-      double away=(g_latr>0.0) ? g_pkD[d]/g_latr : 0.0;
-      l3=inz ? Ch(0x25B6)+" PRICE IN THE ZONE: entry now" : "Waiting: "+DoubleToString(away,1)+" ATR away";
-      c3=inz ? cGold : cTxt;
-      l4="Entry "+DoubleToString(ent,_Digits)+"   Stop "+DoubleToString(sl,_Digits);
-      l5="Target +"+DoubleToString(InpTargetR,0)+"R "+DoubleToString(tp,_Digits)+"   (Wide, 1:"+DoubleToString(InpTargetR,0)+")";
-      l6=StatusLine();
+      CText(p+"m1",lx,yy,!g_modelOk ? "Model still learning this market" : "No learned zone in view",cTxt,9,true,false);
+      CText(p+"m2",lx,yy+Px(20),!g_modelOk ? "Give it a few seconds" : "The card wakes up when the model picks one",cDim,8,false,false);
+      CText(p+"m3",lx,yy+Px(48),StatusLine(),cDim,7,false,false);
+      return;
      }
-   CardLine(p+"t1",lx,ly+st,l1,c1,9,true);
-   CardLine(p+"t2",lx,ly+st*2,l2,cTxt,9,false);
-   CardLine(p+"t3",lx,ly+st*3,l3,c3,9,true);
-   CardLine(p+"t4",lx,ly+st*4,l4,cTxt,9,false);
-   CardLine(p+"t5",lx,ly+st*5,l5,cTxt,9,false);
-   CardLine(p+"t6",lx,ly+st*6,l6,cDim,8,false);
-   CardLine(p+"t7",lx,ly+st*7,"Same zones the EA trades and members get as TOP SIGNAL",cDim,7,false);
+   double ent,sl,tp,unit;
+   PlanLevels(d,ent,sl,tp,unit);
+   bool isWith=(sd==1 && d==0) || (sd==2 && d==1);
+   //--- row 1: side badge, timeframes, score pill
+   CRect(p+"sb",lx,yy,Px(46),Px(22),acc,acc);
+   CText(p+"st",lx+Px(23),yy+Px(4),(d==0) ? "BUY" : "SELL",C'255,255,255',9,true,false);
+   ObjectSetInteger(0,p+"st",OBJPROP_ANCHOR,ANCHOR_UPPER);
+   CText(p+"tf",lx+Px(56),yy+Px(4),MaskNames(g_pkMask[d]),cTxt,9,true,false);
+   CRect(p+"sc",rx-Px(64),yy,Px(64),Px(22),cTrack,cLine);
+   CText(p+"scv",rx-Px(32),yy+Px(4),"score "+((g_pkSc[d]>=0) ? "+" : "")+DoubleToString(g_pkSc[d],2),cGold,8,true,false);
+   ObjectSetInteger(0,p+"scv",OBJPROP_ANCHOR,ANCHOR_UPPER);
+   //--- row 2: spike side
+   yy+=Px(32);
+   string sp=(sd==0) ? "Not a spike market" : (isWith ? Ch(0x2714)+"  With the spike  "+Ch(0xB7)+"  proven T2R side" : Ch(0x26A0)+"  Against the spike  "+Ch(0xB7)+"  not the T2R setup");
+   CText(p+"sp",lx,yy,sp,(sd==0) ? cDim : (isWith ? InpBuyColor : C'240,170,70'),8,true,false);
+   //--- row 3: status + distance bar
+   yy+=Px(24);
+   bool inz=(price>=g_pkLo[d] && price<=g_pkHi[d]);
+   double away=(g_latr>0.0) ? g_pkD[d]/g_latr : 0.0;
+   CText(p+"ss",lx,yy,inz ? Ch(0x25CF)+"  PRICE IN THE ZONE" : "WAITING FOR PRICE",inz ? cGold : cTxt,8,true,false);
+   CText(p+"sd",rx,yy,inz ? "entry now" : DoubleToString(away,1)+" ATR away",cDim,8,false,true);
+   int bw=w-Px(26);
+   double fill=inz ? 1.0 : MathMax(0.04,1.0-MathMin(away/4.0,1.0));
+   CRect(p+"bt",lx,yy+Px(19),bw,Px(5),cTrack,cTrack);
+   CRect(p+"bf",lx,yy+Px(19),(int)(bw*fill),Px(5),inz ? cGold : acc,inz ? cGold : acc);
+   //--- row 4: the plan, three columns
+   yy+=Px(36);
+   CRect(p+"pl",lx,yy-Px(6),bw,Px(1),cLine,cLine);
+   int col=bw/3;
+   string lb[3];
+   string vl[3];
+   color vc[3];
+   lb[0]="ENTRY";
+   lb[1]="STOP  -1R";
+   lb[2]="TARGET  +"+DoubleToString(InpTargetR,0)+"R";
+   vl[0]=DoubleToString(ent,_Digits);
+   vl[1]=DoubleToString(sl,_Digits);
+   vl[2]=DoubleToString(tp,_Digits);
+   vc[0]=cGold;
+   vc[1]=InpSellColor;
+   vc[2]=InpBuyColor;
+   for(int i=0;i<3;i++)
+     {
+      CText(p+"pl"+IntegerToString(i),lx+i*col,yy,lb[i],cDim,7,false,false);
+      CText(p+"pv"+IntegerToString(i),lx+i*col,yy+Px(14),vl[i],vc[i],8,true,false);
+     }
+   //--- footer
+   yy+=Px(42);
+   CRect(p+"fl",lx,yy-Px(6),bw,Px(1),cLine,cLine);
+   CText(p+"f1",lx,yy,"Wide stop  "+Ch(0xB7)+"  1:"+DoubleToString(InpTargetR,0)+"  "+Ch(0xB7)+"  risk 0.25%",cDim,7,false,false);
+   CText(p+"f2",lx,yy+Px(14),StatusLine(),cDim,7,false,false);
   }
 
 //+------------------------------------------------------------------+
@@ -1874,6 +1963,8 @@ int OnInit()
       g_liveCnt[d]=0;
       g_liveFlag[d]=0;
      }
+   g_cardMin=(GlobalVariableCheck(GV+"cardmin") && GlobalVariableGet(GV+"cardmin")>0.5);
+   g_cardSig="";
    g_dpi=(double)TerminalInfoInteger(TERMINAL_SCREEN_DPI)/96.0;
    if(g_dpi<1.0)
       g_dpi=1.0;
@@ -1927,6 +2018,14 @@ void OnChartEvent(const int id,const long &lparam,const double &dparam,const str
       Redraw();
    if(id==CHARTEVENT_OBJECT_CLICK)
      {
+      if(sparam==PFX+"CD_btn")
+        {
+         g_cardMin=!g_cardMin;
+         GlobalVariableSet(GV+"cardmin",g_cardMin ? 1.0 : 0.0);
+         g_cardSig="";
+         Redraw();
+         return;
+        }
       string p=PFX+"P_";
       bool hit=false;
       if(sparam==p+"z_show")
