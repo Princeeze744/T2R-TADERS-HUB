@@ -7,7 +7,7 @@
 //| plan (Wide stop, 1:3) drawn on the nearest learned zone; live card.
 //+------------------------------------------------------------------+
 #property copyright "SELF-TAUGHT ZONES"
-#property version   "2.10"
+#property version   "2.20"
 #property strict
 #property indicator_chart_window
 #property indicator_buffers 0
@@ -44,6 +44,9 @@ input bool            InpShowOthers   = true;        // Also show zones the mode
 input bool            InpPlan         = true;        // Draw the trade plan on the nearest learned zone
 input double          InpWideATR      = 3.0;         // Wide stop: 1R = zone height, at least this x ATR (EA: 3.0)
 input double          InpTargetR      = 3.0;         // Target in R (EA: 3)
+input bool            InpLearnExit    = true;        // Learned exit: pick the stop and target that worked best, if it proves itself on unseen data
+input int             InpExitMinN     = 40;          // Learned exit: tests needed in the learning half (and half that in the proof half)
+input double          InpExitSlip     = 0.10;        // Learned exit: slippage charged per trade (x zone height), punishes tight stops
 input bool            InpCard         = true;        // Show the live Learned Zone card
 input bool            InpCardBottom   = false;       // Card at the bottom right (off = top right)
 
@@ -882,13 +885,120 @@ int PlanDir()
    return d;
   }
 
+//--- the learned exit: chosen on the older half, kept only if it beats 1:3 on the newer half (data it never saw)
+bool   g_exL=false;      // learned exit in use
+int    g_exSi=2, g_exLv=3;
+double g_exEvNew=0.0, g_exEvFix=0.0;
+int    g_exN=0, g_exNn=0;
+string g_exWhy="";
+
+double ExitEv(const int i,const int d,const int hf,const int si,const int lv,int &n)
+  {
+   int base=((1*2+d)*2+hf)*4+si;                 // view 1 = model picks
+   n=g_stats[i].n[base];
+   if(n<=0)
+      return -9.0;
+   double rate=(double)g_stats[i].h[base*4+lv]/n;
+   return rate*(g_lev[lv]/g_sm[si])-(1.0-rate)-MathMax(InpExitSlip,0.0)/g_sm[si];
+  }
+
+void LearnExit(const int d)
+  {
+   g_exL=false;
+   g_exSi=2;
+   g_exLv=3;
+   g_exWhy="";
+   if(!InpLearnExit)
+     {
+      g_exWhy="learned exit switched off";
+      return;
+     }
+   int row=-1;
+   for(int i=0;i<g_nStats;i++)
+      if(g_stats[i].mask==g_pkMask[d])
+         row=i;
+   if(row<0)
+     {
+      g_exWhy="no history for "+MaskNames(g_pkMask[d])+" zones yet";
+      return;
+     }
+   //--- learn: the best stop and target on the older half
+   double best=-99.0;
+   int bs=-1,bl=-1,bn=0;
+   for(int si=0;si<4;si++)
+      for(int lv=0;lv<4;lv++)
+        {
+         int n=0;
+         double ev=ExitEv(row,d,0,si,lv,n);
+         if(n>=InpExitMinN && ev>best)
+           {
+            best=ev;
+            bs=si;
+            bl=lv;
+            bn=n;
+           }
+        }
+   if(bs<0)
+     {
+      g_exWhy="too few tests to learn ("+MaskNames(g_pkMask[d])+")";
+      return;
+     }
+   //--- prove: on the newer half, against the fixed 1x stop / 3x target
+   int nn=0,nf=0;
+   double evNew=ExitEv(row,d,1,bs,bl,nn);
+   double evFix=ExitEv(row,d,1,2,3,nf);
+   g_exEvNew=evNew;
+   g_exEvFix=evFix;
+   g_exN=bn;
+   g_exNn=nn;
+   if(nn<MathMax(InpExitMinN/2,10))
+     {
+      g_exWhy="not enough unseen tests to prove it ("+IntegerToString(nn)+")";
+      return;
+     }
+   if(bs==2 && bl==3)
+     {
+      g_exWhy="the fixed 1:3 is already the best";
+      return;
+     }
+   if(evNew>0.0 && evNew>evFix+0.02)
+     {
+      g_exL=true;
+      g_exSi=bs;
+      g_exLv=bl;
+      return;
+     }
+   g_exWhy="learned exit did not beat 1:3 on unseen data";
+  }
+
 void PlanLevels(const int d,double &ent,double &sl,double &tp,double &unit)
   {
+   LearnExit(d);
    double h=g_pkHi[d]-g_pkLo[d];
-   unit=MathMax(h,MathMax(InpWideATR,0.0)*g_latr);
    ent=(d==0) ? g_pkHi[d] : g_pkLo[d];
+   if(g_exL)
+     {
+      //--- the scorecard's units: 1x = zone height (at least the scorecard minimum x ATR)
+      double z=MathMax(h,MathMax(InpScoreMinRisk,0.0)*g_latr);
+      double st=g_sm[g_exSi]*z;
+      unit=st;
+      sl=(d==0) ? ent-st : ent+st;
+      tp=(d==0) ? ent+g_lev[g_exLv]*z : ent-g_lev[g_exLv]*z;
+      return;
+     }
+   unit=MathMax(h,MathMax(InpWideATR,0.0)*g_latr);
    sl=(d==0) ? ent-unit : ent+unit;
    tp=(d==0) ? ent+InpTargetR*unit : ent-InpTargetR*unit;
+  }
+
+double PlanRR()
+  {
+   return g_exL ? g_lev[g_exLv]/g_sm[g_exSi] : InpTargetR;
+  }
+
+string RRStr(const double r)
+  {
+   return DoubleToString(r,(MathAbs(r-MathRound(r))<0.05) ? 0 : 1);
   }
 
 void DrawPlan(const double price)
@@ -910,7 +1020,7 @@ void DrawPlan(const double price)
    SetLine(p+"T",x1,tp,x2,tp,InpBuyColor,STYLE_DASH,1);
    SetText(p+"Et",x1,ent,"ENTRY "+DoubleToString(ent,_Digits),C'240,200,90',fs,ANCHOR_LEFT_LOWER);
    SetText(p+"St",x1,sl,"STOP -1R "+DoubleToString(sl,_Digits),InpSellColor,fs,ANCHOR_LEFT_LOWER);
-   SetText(p+"Tt",x1,tp,"TARGET +"+DoubleToString(InpTargetR,0)+"R "+DoubleToString(tp,_Digits),InpBuyColor,fs,ANCHOR_LEFT_LOWER);
+   SetText(p+"Tt",x1,tp,"TARGET +"+RRStr(PlanRR())+"R "+DoubleToString(tp,_Digits)+(g_exL ? "  (learned)" : ""),InpBuyColor,fs,ANCHOR_LEFT_LOWER);
   }
 
 //--- card building blocks (all placed from the chart's top-left corner, in pixels)
@@ -1009,7 +1119,7 @@ void DrawCard(const double price)
       CButton(p+"btn",px+pw-Px(26),py+Px(3),Px(22),Px(18),"+",cLine,cTxt);
       return;
      }
-   int h=Px(d>=0 ? 236 : 128);
+   int h=Px(d>=0 ? 270 : 128);
    int y=InpCardBottom ? ch-h-Px(14) : Px(26);
    string sig="full"+IntegerToString(d>=0 ? 1 : 0);
    if(g_cardSig!=sig)
@@ -1067,7 +1177,7 @@ void DrawCard(const double price)
    color vc[3];
    lb[0]="ENTRY";
    lb[1]="STOP  -1R";
-   lb[2]="TARGET  +"+DoubleToString(InpTargetR,0)+"R";
+   lb[2]="TARGET  +"+RRStr(PlanRR())+"R";
    vl[0]=DoubleToString(ent,_Digits);
    vl[1]=DoubleToString(sl,_Digits);
    vl[2]=DoubleToString(tp,_Digits);
@@ -1082,8 +1192,17 @@ void DrawCard(const double price)
    //--- footer
    yy+=Px(42);
    CRect(p+"fl",lx,yy-Px(6),bw,Px(1),cLine,cLine);
-   CText(p+"f1",lx,yy,"Wide stop  "+Ch(0xB7)+"  1:"+DoubleToString(InpTargetR,0)+"  "+Ch(0xB7)+"  risk 0.25%",cDim,7,false,false);
-   CText(p+"f2",lx,yy+Px(14),StatusLine(),cDim,7,false,false);
+   if(g_exL)
+     {
+      CText(p+"f1",lx,yy,Ch(0x2699)+"  LEARNED EXIT  stop "+g_smName[g_exSi]+"  "+Ch(0xB7)+"  target "+g_levName[g_exLv]+"  "+Ch(0xB7)+"  1:"+RRStr(PlanRR()),cGold,8,true,false);
+      CText(p+"f2",lx,yy+Px(16),"Unseen data: "+((g_exEvNew>=0) ? "+" : "")+DoubleToString(g_exEvNew,2)+"R vs 1:3 "+((g_exEvFix>=0) ? "+" : "")+DoubleToString(g_exEvFix,2)+"R  "+Ch(0xB7)+"  "+IntegerToString(g_exNn)+" tests",InpBuyColor,7,false,false);
+     }
+   else
+     {
+      CText(p+"f1",lx,yy,"FIXED EXIT  Wide stop  "+Ch(0xB7)+"  1:"+RRStr(InpTargetR)+"  "+Ch(0xB7)+"  as the EA",cTxt,8,true,false);
+      CText(p+"f2",lx,yy+Px(16),g_exWhy,cDim,7,false,false);
+     }
+   CText(p+"f3",lx,yy+Px(32),StatusLine(),cDim,7,false,false);
   }
 
 //+------------------------------------------------------------------+
