@@ -7,7 +7,7 @@
 //| plan (Wide stop, 1:3) drawn on the nearest learned zone; live card.
 //+------------------------------------------------------------------+
 #property copyright "SELF-TAUGHT ZONES"
-#property version   "3.00"
+#property version   "3.10"
 #property strict
 #property indicator_chart_window
 #property indicator_buffers 0
@@ -859,6 +859,7 @@ void DrawZones(const double price)
    DrawZoneSide(1,zb,noSell ? 0 : nzb,price);
    DrawPlan(price);
    DrawCard(price);
+   DrawBob();
   }
 
 string Ch(const int code)
@@ -904,6 +905,23 @@ int    g_bestTf=-1;
 datetime g_tfScanAt=0;
 bool   g_exPool=false;
 double g_exWin=0.0;
+
+//--- pooled result for a view (0 = every zone, 1 = model picks), side, history half, stop and target
+double EvView(const int view,const int d,const int hf,const int si,const int lv,int &n,double &win)
+  {
+   int base=((view*2+d)*2+hf)*4+si;
+   n=0;
+   int hits=0;
+   for(int k=0;k<g_nStats;k++)
+     {
+      n+=g_stats[k].n[base];
+      hits+=g_stats[k].h[base*4+lv];
+     }
+   win=(n>0) ? (double)hits/n : 0.0;
+   if(n<=0)
+      return 0.0;
+   return win*(g_lev[lv]/g_sm[si])-(1.0-win)-MathMax(InpExitSlip,0.0)/g_sm[si];
+  }
 
 double ExitRate(const int i,const int d,const int hf,const int si,const int lv)
   {
@@ -1130,6 +1148,100 @@ string g_barsSig="";
 datetime g_lastTry=0;
 string g_cardSig="";
 
+bool g_bob=false;
+
+void BobRow(const string p,const string id,const int lx,const int yy,const int bw,const string step,const string sub,
+            const double ev,const double win,const int n,const double maxAbs,const bool hi)
+  {
+   color cTxt=C'222,225,232', cDim=C'128,133,146', cTrack=C'40,44,56', cGold=C'232,190,92';
+   CText(p+id+"a",lx,yy,step,hi ? cGold : cTxt,9,true,false);
+   CText(p+id+"b",lx,yy+Px(16),sub,cDim,7,false,false);
+   string v=(n>0) ? ((ev>=0) ? "+" : "")+DoubleToString(ev,2)+"R" : "-";
+   CText(p+id+"c",lx+bw,yy,v,(ev>0.0) ? InpBuyColor : InpSellColor,10,true,true);
+   CText(p+id+"d",lx+bw,yy+Px(17),(n>0) ? "won "+IntegerToString((int)MathRound(100.0*win))+"%  "+Ch(0xB7)+"  "+IntegerToString(n)+" trades" : "no data",cDim,7,false,true);
+   int tw=bw;
+   CRect(p+id+"t",lx,yy+Px(32),tw,Px(6),cTrack,cTrack);
+   double f=(maxAbs>0.0) ? MathMin(MathAbs(ev)/maxAbs,1.0) : 0.0;
+   CRect(p+id+"f",lx,yy+Px(32),MathMax((int)(tw*f),1),Px(6),(ev>0.0) ? (hi ? cGold : InpBuyColor) : InpSellColor,(ev>0.0) ? (hi ? cGold : InpBuyColor) : InpSellColor);
+  }
+
+void DrawBob()
+  {
+   string p=PFX+"BB_";
+   if(!g_bob || !g_modelOk)
+     {
+      ObjectsDeleteAll(0,p);
+      return;
+     }
+   color cBg=C'18,20,26', cHead=C'28,31,40', cLine=C'48,52,64', cTxt=C'222,225,232', cDim=C'128,133,146', cGold=C'232,190,92';
+   int sd=SpikeSide();
+   int dd=(sd==2) ? 1 : (sd==1) ? 0 : (PlanDir()>=0 ? PlanDir() : 0);
+   //--- the four steps, all on the newer half (data the model never saw)
+   int n1,n2,n3,n4;
+   double w1,w2,w3,w4;
+   double e1=EvView(0,dd,1,2,3,n1,w1);          // every zone, fixed 1:3
+   double e2=EvView(1,dd,1,2,3,n2,w2);          // model picks only, fixed 1:3
+   LearnExitM(dd,-1);
+   double e3=e2;
+   w3=w2;
+   n3=n2;
+   if(g_exL)
+     {
+      e3=g_exEvNew;
+      w3=g_exWin;
+      n3=g_exNn;
+     }
+   bool tfOn=(InpLearnTF && g_bestTf>=0);
+   double e4=tfOn ? g_tfEv[g_bestTf] : e3;
+   w4=tfOn ? g_tfWin[g_bestTf] : w3;
+   n4=tfOn ? g_tfN[g_bestTf] : n3;
+   if(tfOn && e4<e3 && g_cand[g_bestTf]!=(ENUM_TIMEFRAMES)_Period)
+     {
+      e4=e3;
+      w4=w3;
+      n4=n3;
+     }
+   double mx=MathMax(MathMax(MathAbs(e1),MathAbs(e2)),MathMax(MathAbs(e3),MathAbs(e4)));
+   int w=Px(330), h=Px(392);
+   int x=Px(14), y=Px(26);
+   CRect(p+"bg",x,y,w,h,cBg,cLine);
+   CRect(p+"acc",x,y,Px(3),h,cGold,cGold);
+   CRect(p+"hd",x+Px(3),y,w-Px(3),Px(30),cHead,cHead);
+   CText(p+"ttl",x+Px(14),y+Px(8),Ch(0x2B50)+Ch(0x2B50)+"  BEST OF THE BEST  "+Ch(0xB7)+"  "+_Symbol,cGold,9,true,false);
+   CButton(p+"x",x+w-Px(28),y+Px(6),Px(20),Px(18),"x",cLine,cTxt);
+   int lx=x+Px(14), bw=w-Px(28), yy=y+Px(40);
+   CText(p+"s0",lx,yy,"What learning did on "+((dd==0) ? "BUYS" : "SELLS")+", tested on data the model never saw",cDim,7,false,false);
+   yy+=Px(20);
+   BobRow(p,"r1",lx,yy,bw,"1  Every zone","no learning  "+Ch(0xB7)+"  1:3  "+Ch(0xB7)+"  "+TFName((ENUM_TIMEFRAMES)_Period),e1,w1,n1,mx,false);
+   yy+=Px(52);
+   BobRow(p,"r2",lx,yy,bw,"2  + Learned zones only",Ch(0x2B50)+" model picks  "+Ch(0xB7)+"  1:3",e2,w2,n2,mx,false);
+   yy+=Px(52);
+   BobRow(p,"r3",lx,yy,bw,"3  + Best stop & target",g_exL ? "stop "+g_smName[g_exSi]+"  target "+g_levName[g_exLv]+"  "+Ch(0xB7)+"  1:"+RRStr(g_lev[g_exLv]/g_sm[g_exSi]) : "not proven yet, stays 1:3",e3,w3,n3,mx,!tfOn);
+   yy+=Px(52);
+   BobRow(p,"r4",lx,yy,bw,"4  + Best chart timeframe",tfOn ? "chart "+TFName(g_cand[g_bestTf])+(g_tfProven[g_bestTf] ? "  "+Ch(0xB7)+"  its own best exit" : "  "+Ch(0xB7)+"  1:3") : "timeframe check off",e4,w4,n4,mx,tfOn);
+   yy+=Px(58);
+   CRect(p+"l1",lx,yy-Px(6),bw,Px(1),cLine,cLine);
+   //--- the bottom line
+   string bl;
+   color bc;
+   if(e4>0.0)
+     {
+      bl=Ch(0x2714)+"  Best of the best: "+((e4>=0) ? "+" : "")+DoubleToString(e4,2)+"R a trade";
+      bc=InpBuyColor;
+     }
+   else
+     {
+      bl=Ch(0x26D4)+"  Even the best setup loses here: skip this market";
+      bc=InpSellColor;
+     }
+   CText(p+"b1",lx,yy,bl,bc,10,true,false);
+   yy+=Px(22);
+   string b2=(e4>0.0) ? "100 trades at $10 risk:  "+((e4*1000.0>=0) ? "+$" : "-$")+DoubleToString(MathAbs(e4*1000.0),0)+"   (no learning: "+((e1>=0) ? "+$" : "-$")+DoubleToString(MathAbs(e1*1000.0),0)+")" : "No learned setting turned this market profitable";
+   CText(p+"b2",lx,yy,b2,cTxt,8,false,false);
+   yy+=Px(18);
+   CText(p+"b3",lx,yy,"Slippage charged. Small trade counts can be luck: trust 30+.",cDim,7,false,false);
+  }
+
 bool g_details=false;
 
 void DrawCard(const double price)
@@ -1179,7 +1291,8 @@ void DrawCard(const double price)
    CRect(p+"bg",x,y,w,h,cBg,cLine);
    CRect(p+"acc",x,y,Px(3),h,acc,acc);
    CRect(p+"hd",x+Px(3),y,w-Px(3),Px(30),cHead,cHead);
-   CText(p+"ttl",x+Px(14),y+Px(8),Ch(0x2B50)+"  T2R PLAN  "+Ch(0xB7)+"  "+_Symbol,cGold,9,true,false);
+   CText(p+"ttl",x+Px(14),y+Px(8),Ch(0x2B50)+"  T2R PLAN",cGold,9,true,false);
+   CButton(p+"bob",x+w-Px(140),y+Px(6),Px(52),Px(18),g_bob ? "Close" : "Best",cGold,C'18,20,26');
    CButton(p+"det",x+w-Px(84),y+Px(6),Px(52),Px(18),g_details ? "Close" : "Details",cLine,cTxt);
    CButton(p+"btn",x+w-Px(28),y+Px(6),Px(20),Px(18),"-",cLine,cTxt);
    int lx=x+Px(14), rx=x+w-Px(12), bw=w-Px(26), yy=y+Px(40);
@@ -1193,7 +1306,7 @@ void DrawCard(const double price)
       for(int c=0;c<3;c++)
         {
          string nm=TFName(g_cand[c]);
-         bool best=(c==g_bestTf);
+         bool best=(c==g_bestTf && g_tfEv[c]>0.0);
          string row=g_tfOk[c] ? ((g_tfEv[c]>=0) ? "+" : "")+DoubleToString(g_tfEv[c],2)+"R a trade   "+Ch(0xB7)+"   "+IntegerToString(g_tfN[c])+" tests"
                               : "not enough history";
          CText(p+"tfn"+IntegerToString(c),lx,yy,(best ? Ch(0x25B6)+" " : "   ")+nm,best ? cGold : cTxt,9,best,false);
@@ -1204,7 +1317,12 @@ void DrawCard(const double price)
         }
       string adv="";
       color ac=cDim;
-      if(g_bestTf>=0)
+      if(g_bestTf>=0 && g_tfEv[g_bestTf]<=0.0)
+        {
+         adv=Ch(0x26D4)+"  Losing on every timeframe: skip this market";
+         ac=InpSellColor;
+        }
+      else if(g_bestTf>=0)
         {
          if(g_cand[g_bestTf]==(ENUM_TIMEFRAMES)_Period)
            {
@@ -1251,7 +1369,8 @@ void DrawCard(const double price)
    CRect(p+"l2",lx,yy-Px(8),bw,Px(1),cLine,cLine);
 
    //--- 3. THE TRADE NOW
-   CText(p+"s3",lx,yy,(showTf ? "3  " : "")+"THE TRADE NOW",cDim,7,true,false);
+   bool skip=(showTf && g_bestTf>=0 && g_tfEv[g_bestTf]<=0.0);
+   CText(p+"s3",lx,yy,(showTf ? "3  " : "")+"THE TRADE NOW"+(skip ? "   "+Ch(0x26D4)+" market not profitable, trade with care" : ""),skip ? InpSellColor : cDim,7,true,false);
    yy+=Px(16);
    if(!g_modelOk || d<0)
      {
@@ -2315,9 +2434,21 @@ void OnChartEvent(const int id,const long &lparam,const double &dparam,const str
       Redraw();
    if(id==CHARTEVENT_OBJECT_CLICK)
      {
+      if(sparam==PFX+"CD_bob" || sparam==PFX+"BB_x")
+        {
+         g_bob=!g_bob;
+         if(g_bob)
+            g_details=false;                     // one big panel at a time
+         g_cardSig="";
+         g_panelState=-1;
+         Redraw();
+         return;
+        }
       if(sparam==PFX+"CD_det")
         {
          g_details=!g_details;
+         if(g_details)
+            g_bob=false;
          GlobalVariableSet(GV+"details",g_details ? 1.0 : 0.0);
          g_cardSig="";
          g_panelState=-1;
