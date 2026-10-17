@@ -7,7 +7,7 @@
 //| plan (Wide stop, 1:3) drawn on the nearest learned zone; live card.
 //+------------------------------------------------------------------+
 #property copyright "SELF-TAUGHT ZONES"
-#property version   "2.00"
+#property version   "2.10"
 #property strict
 #property indicator_chart_window
 #property indicator_buffers 0
@@ -973,6 +973,8 @@ void CButton(const string name,const int x,const int y,const int w,const int h,c
   }
 
 bool g_cardMin=false;
+string g_barsSig="";
+datetime g_lastTry=0;
 string g_cardSig="";
 
 void DrawCard(const double price)
@@ -1924,8 +1926,14 @@ void Redraw()
       if(price<=0.0)
          price=iClose(_Symbol,_Period,0);
       bool wantScore=(ALWAYS_SCORE || (InpPanelShow && !g_collapsed));
-      if(wantScore && (!g_scoreOk || g_scoreAt!=g_t0 || g_scoreN!=g_nAct))
+      //--- the higher-timeframe history MT5 downloads in the background: when it grows, learn and score again
+      string bsig="";
+      for(int e=0;e<g_nAct;e++)
+         bsig+=IntegerToString(iBars(_Symbol,g_tf[g_act[e]]))+"|";
+      if(wantScore && (!g_scoreOk || (!g_modelOk && TimeLocal()-g_lastTry>=30) || g_scoreAt!=g_t0 || g_scoreN!=g_nAct || bsig!=g_barsSig))
         {
+         g_barsSig=bsig;
+         g_lastTry=TimeLocal();
          RunScore();
          g_scoreAt=g_t0;
          g_scoreN=g_nAct;
