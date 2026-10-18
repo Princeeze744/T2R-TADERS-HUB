@@ -126,14 +126,14 @@ function Body({ t, data, risk, copy, copied }) {
             {t.res !== 'open' && <span className={'mono ' + cl(t.R)}>{money(t.R, risk)} at ${risk} risk</span>}
           </div>
           <p className="dim" style={{ fontSize: 14, marginBottom: 0 }}>
-            {t.res === 'won' && `Price travelled from entry to the full target (${t.rr}). Every $1 risked made $${t.ratio}, minus the spread.`}
+            {t.res === 'won' && (t.ratio > 0 ? `Price travelled from entry to the full target (${t.rr}). Every $1 risked made $${t.ratio}, minus the spread.` : 'Closed in profit by the clock, one hour after entry.')}
             {t.res === 'lost' && 'Price reached the stop first. The loss is 1R plus the spread (and more on a spike that jumps the stop).'}
             {t.res === 'open' && 'This trade had not finished when the data was saved. It will show its result after the next update.'}
           </p>
           <div className="hr" />
           <div className="between" style={{ fontSize: 13.5 }}><span className="dim">Time in the trade</span><span className="mono">{duration(t.tin, t.tout)}</span></div>
           {t.rT2R != null && t.res !== 'open' && <div className="between" style={{ fontSize: 13.5, marginTop: 8 }}><span className="dim">With the T2R rule (half off at 1:1)</span><span className={'mono ' + cl(t.rT2R)}>{f2(t.rT2R)}R</span></div>}
-          <div className="between" style={{ fontSize: 13.5, marginTop: 8 }}><span className="dim">Break-even win rate at {t.rr}</span><span className="mono">{Math.round(100 / (1 + t.ratio))}%</span></div>
+          {t.ratio > 0 && <div className="between" style={{ fontSize: 13.5, marginTop: 8 }}><span className="dim">Break-even win rate at {t.rr}</span><span className="mono">{Math.round(100 / (1 + t.ratio))}%</span></div>}
           {w && <div className="between" style={{ fontSize: 13.5, marginTop: 8 }}><span className="dim">This setup on unseen history</span><span className="mono">{pc(uw, un)} won · {un} trades</span></div>}
         </div>
       </div>

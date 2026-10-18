@@ -106,7 +106,7 @@ export function TradeChart({ t, height = 440 }) {
       const line = (price, color, title, style) => ser.createPriceLine({ price, color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title });
       line(t.e, C.gold, 'Entry', 0);
       line(t.sl, C.loss, 'Stop', 2);
-      line(t.tp, C.win, 'Target ' + t.rr, 2);
+      if (t.tp) line(t.tp, C.win, 'Target ' + t.rr, 2);
       if (t.ratio > 1.05) line(tp1, 'rgba(54,211,153,.55)', 'TP1 1:1', 1);
       const mk = [{ time: data[a].time, position: buy ? 'belowBar' : 'aboveBar', shape: buy ? 'arrowUp' : 'arrowDown', color: C.gold, text: (buy ? 'BUY ' : 'SELL ') + hhmm(t.tin) }];
       if (t.tout) mk.push({ time: data[b].time, position: t.res === 'won' ? (buy ? 'aboveBar' : 'belowBar') : (buy ? 'belowBar' : 'aboveBar'), shape: 'circle', color: t.res === 'won' ? C.win : C.loss, text: (t.res === 'won' ? 'Target ' : 'Stop ') + f2(t.R) + 'R' });
@@ -169,8 +169,8 @@ export function TradeSchematic({ t, height = 440 }) {
     <div className="chart-box" style={{ height }}>
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" height="100%" preserveAspectRatio="none" role="img" aria-label="Trade plan">
         <rect x={xA} width={xB - xA} y={Math.min(Y(t.e), Y(t.sl))} height={Math.abs(Y(t.sl) - Y(t.e))} fill="rgba(255,107,107,.13)" stroke="rgba(255,107,107,.3)" />
-        <rect x={xA} width={xB - xA} y={Math.min(Y(t.e), Y(t.tp))} height={Math.abs(Y(t.tp) - Y(t.e))} fill="rgba(54,211,153,.10)" stroke="rgba(54,211,153,.3)" />
-        {lab(t.tp, 'Target ' + t.rr, C.win, t.tp)}
+        {t.tp ? <rect x={xA} width={xB - xA} y={Math.min(Y(t.e), Y(t.tp))} height={Math.abs(Y(t.tp) - Y(t.e))} fill="rgba(54,211,153,.10)" stroke="rgba(54,211,153,.3)" /> : null}
+        {t.tp ? lab(t.tp, 'Target ' + t.rr, C.win, t.tp) : null}
         {t.ratio > 1.05 && lab(tp1, 'TP1 1:1', 'rgba(54,211,153,.7)', tp1)}
         {lab(t.e, 'Entry', C.gold, t.e)}
         {lab(t.sl, 'Stop', C.loss, t.sl)}

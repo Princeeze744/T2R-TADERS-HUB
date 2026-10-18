@@ -309,7 +309,7 @@ function SignalCard({ r, fam, fresh, onOpen, risk, today, bal }) {
         <div><span>Entry</span><b style={{ color: 'var(--gold2)' }}>{fmtPrice(r.entry, ref)}</b></div>
         <div><span>Stop</span><b className="r">{fmtPrice(r.stop, ref)}</b></div>
         {r.tp1 ? <div><span>TP1 1:1</span><b className="g" style={{ opacity: 0.8 }}>{fmtPrice(r.tp1, ref)}</b></div> : null}
-        <div><span>Target {r.rr}</span><b className="g">{fmtPrice(r.target, ref)}</b></div>
+        {r.target ? <div><span>Target {r.rr}</span><b className="g">{fmtPrice(r.target, ref)}</b></div> : <div><span>Exit</span><b className="g">{r.rr || 'time exit'}</b></div>}
       </div>
       <div className="sig-foot">
         <Steps r={r} />

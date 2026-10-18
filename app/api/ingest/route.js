@@ -56,7 +56,7 @@ export async function POST(req) {
   try { body = await req.json(); } catch { return Response.json({ ok: false, error: 'bad json' }, { status: 400 }); }
   const events = Array.isArray(body?.events) ? body.events : [body];
   // forex and metals: the old zone strategies showed no edge, so only the new T2R Trend signals are recorded
-  const fxOld = (e) => e.market && familyOf(e.market) !== '' && ['Forex', 'Metals'].includes(familyOf(e.market)) && !String(e.strategy || '').startsWith('T2R Trend');
+  const fxOld = (e) => e.market && familyOf(e.market) !== '' && ['Forex', 'Metals'].includes(familyOf(e.market)) && !String(e.strategy || '').startsWith('T2R Trend') && !String(e.strategy || '').startsWith('T2R Clock');
   const all = events.filter((e) => e && e.id && e.kind && !fxOld(e));
   if (!all.length) return Response.json({ ok: true, saved: 0, note: 'forex and metals zone signals are retired' });
   const accts = all.filter((e) => e.kind === 'account');
