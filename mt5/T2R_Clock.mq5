@@ -14,7 +14,7 @@
 //| One chart runs every pair. Attach it to any chart.               |
 //+------------------------------------------------------------------+
 #property copyright   "Trade2Retire Academy"
-#property version     "1.30"
+#property version     "1.31"
 #property description "T2R Clock: after-rollover bounce, all pairs from one chart, Telegram + website signals"
 #include <Trade/Trade.mqh>
 
@@ -36,7 +36,8 @@ input double InpRiskPct    = 0.10;      // Risk per trade, % of equity (all pair
 input double InpStopDays   = 0.5;       // Stop = this x a normal day's range (DNA: beats 9 in 10 stop hunts)
 input double InpDailyStop  = 2.0;       // Stop trading for the day if equity falls this % from the day's start
 input int    InpMaxOpen    = 12;        // Most trades open at once
-input double InpSpreadMult = 2.0;       // Only enter when spread <= this x the pair's normal spread
+input double InpSpreadMult = 0;         // Extra guard: only enter when spread <= this x the pair's normal spread (0 = off; the cost check above already protects)
+input int    InpMinWait    = 3;         // Wait this many minutes after the entry hour starts (the rollover spread spike is in the first 1-3 minutes)
 input bool   InpTrade      = true;      // false = signals only (Telegram, website, journal), place no orders
 input long   InpMagic      = 18190;     // Magic number
 input group "Telegram (leave empty to switch off)"
@@ -68,6 +69,7 @@ double  g_dayStartEq = 0;
 int     g_dayKey = -1;
 bool    g_halt = false;
 int     g_fileOk = 1;
+int     g_lastJm[];       // minute of the last WAIT line in the journal, per pair
 datetime g_tgHead = 0, g_tgSig = 0, g_tgRes = 0;   // New York day the heads-up / signal / result message went out
 string  g_dq[];
 int     g_nDq = 0;
@@ -335,7 +337,7 @@ int OnInit()
       int z = k + 1;
       ArrayResize(g_sym, z); ArrayResize(g_name, z); ArrayResize(g_normSpr, z); ArrayResize(g_doneDay, z); ArrayResize(g_be, z);
       ArrayResize(g_st, z); ArrayResize(g_tk, z); ArrayResize(g_ent, z); ArrayResize(g_sl, z); ArrayResize(g_exit, z); ArrayResize(g_lots, z);
-      ArrayResize(g_tin, z); ArrayResize(g_tout, z); ArrayResize(g_why, z); ArrayResize(g_id, z);
+      ArrayResize(g_tin, z); ArrayResize(g_tout, z); ArrayResize(g_why, z); ArrayResize(g_id, z); ArrayResize(g_lastJm, z); g_lastJm[k] = -1;
       g_be[k] = BreakEven(nm);
       g_sym[k] = s; g_name[k] = nm; g_normSpr[k] = (double)SymbolInfoInteger(s, SYMBOL_SPREAD); g_doneDay[k] = 0; g_id[k] = "";
      }
@@ -437,8 +439,9 @@ void OnTimer()
         {
          double cost = CostPips(s, spr);
          if(g_be[k] <= 0) { st = g_why[k] = "no yardstick for this pair"; g_doneDay[k] = nyDay; g_st[k] = 9; }
+         else if(t.min < InpMinWait) st = "waiting for the rollover spike to pass";
          else if(cost > InpSafety * g_be[k]) st = StringFormat("too costly: %.1f pips vs %.1f allowed", cost, InpSafety * g_be[k]);
-         else if(spr > InpSpreadMult * MathMax(g_normSpr[k], 1)) st = "spread wide, waiting";
+         else if(InpSpreadMult > 0 && spr > InpSpreadMult * MathMax(g_normSpr[k], 1)) st = "spread wide, waiting";
          else if(nOpen >= InpMaxOpen) st = "max trades open";
          else
            {
@@ -465,8 +468,9 @@ void OnTimer()
             else { st = g_why[k] = "order failed " + IntegerToString(trade.ResultRetcode()); g_st[k] = 9; Journal("FAIL", s, bid, ask, spr, g_normSpr[k], lots, sl, 0); }
            }
          if(g_st[k] == 0)
-           {   // not decided yet: keep trying inside the window
+           {   // not decided yet: keep trying inside the window; log the spread once a minute so we learn the real cost
             allFinal = false;
+            if(g_lastJm[k] != t.min) { g_lastJm[k] = t.min; Journal("WAIT", s, bid, ask, spr, g_normSpr[k], 0, 0, cost); }
             lines += StringFormat("%-9s cost %4.1f pips / avg move %4.1f  %s\n", s, cost, g_be[k], st);
             continue;
            }
@@ -475,7 +479,7 @@ void OnTimer()
       if(dayOk && g_doneDay[k] != nyDay && t.hour == InpEntryHour && t.min >= InpEntryWindow && g_st[k] == 0)
         {
          double cost = CostPips(s, spr);
-         g_why[k] = cost > InpSafety * g_be[k] ? StringFormat("skipped: cost %.1f pips, too high for a %.1f pip move", cost, g_be[k]) : "skipped: spread never settled";
+         g_why[k] = cost > InpSafety * g_be[k] ? StringFormat("skipped: cost %.1f pips, too high for a %.1f pip move", cost, g_be[k]) : StringFormat("skipped: spread %.1f pips never settled", CostPips(s, spr));
          g_st[k] = 9; g_doneDay[k] = nyDay;
         }
       if(g_st[k] == 1)
@@ -531,7 +535,7 @@ void OnTimer()
          if(g_st[k] == 1) Desk(k, "update", 0, gmt, false, RofExit(k, SymbolInfoDouble(g_sym[k], SYMBOL_BID)));
      }
    DeskFlush();
-   Comment("T2R CLOCK v1.30  ·  after-rollover bounce", (InpSummerOnly && NYOffset(gmt) != -4 ? "  ·  WINTER: RESTING UNTIL MARCH" : ""), "\n",
+   Comment("T2R CLOCK v1.31  ·  after-rollover bounce", (InpSummerOnly && NYOffset(gmt) != -4 ? "  ·  WINTER: RESTING UNTIL MARCH" : ""), "\n",
            "New York ", TimeToString(ny, TIME_MINUTES), "  ·  Lagos ", Lagos(gmt), "  ·  buy ", InpEntryHour, ":00 NY, close ", InpExitHour, ":00 NY (Mon-Thu)\n",
            "Risk ", DoubleToString(InpRiskPct, 2), "% a trade  ·  daily guard ", DoubleToString(InpDailyStop, 1), "%", (g_halt ? "  ·  PAUSED TODAY" : ""),
            (InpTrade ? "" : "  ·  SIGNALS ONLY"), (InpTgToken != "" && InpTgChat != "" ? "  ·  Telegram ON" : ""), (InpWebUrl != "" ? "  ·  website ON" : ""), "\n\n", lines,
